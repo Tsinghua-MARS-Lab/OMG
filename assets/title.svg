@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="160" viewBox="0 0 1300 160" role="img" aria-labelledby="title">
+  <title id="title">OMG: Omni-Modal Motion Generation for Generalist Humanoid Control</title>
+  <rect width="1300" height="160" fill="none"/>
+  <style>
+    text {
+      fill: #1b1715;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 54px;
+      font-weight: 700;
+    }
+
+    .accent {
+      fill: #9b1419;
+    }
+
+    .initial {
+      fill: #9b1419;
+      text-decoration: underline;
+      text-decoration-thickness: 0.06em;
+    }
+  </style>
+  <text x="650" y="62" text-anchor="middle">
+    <tspan class="accent">OMG:</tspan>
+    <tspan> </tspan>
+    <tspan class="initial">O</tspan><tspan>mni-Modal</tspan>
+    <tspan> </tspan>
+    <tspan class="initial">M</tspan><tspan>otion</tspan>
+    <tspan> </tspan>
+    <tspan class="initial">G</tspan><tspan>eneration</tspan>
+  </text>
+  <text x="650" y="125" text-anchor="middle">for Generalist Humanoid Control</text>
+</svg>

@@ -1,0 +1,56 @@
+# System files
+.DS_Store
+Thumbs.db
+
+# Local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+env/
+
+# Python cache and build outputs
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# Test, lint, and notebook cache
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# IDEs and local tooling
+.idea/
+.vscode/
+.superpowers/
+.worktrees/
+
+# Experiment outputs
+logs/
+runs/
+outputs/
+wandb/
+tensorboard/
+
+# Local datasets and generated artifacts
+data/
+datasets/
+tmp/
+temp/
+
+# Model artifacts
+checkpoints/
+*.ckpt
+*.pth
+*.pt
+*.onnx
+*.npy
+*.npz
