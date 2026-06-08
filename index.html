@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="description" content="OMG: Omni-Modal Motion Generation for Generalist Humanoid Control">
+  <meta name="keywords" content="OMG, Omni-Modal Motion Generation, Humanoid Control, Motion Generation, Foundation Model">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OMG: Omni-Modal Motion Generation for Generalist Humanoid Control</title>
+
+  <link rel="icon" type="image/svg+xml" href="./static/images/omg/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600;6..72,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./static/css/index.css">
+</head>
+<body>
+  <nav class="site-nav" aria-label="Main navigation">
+    <a class="wordmark" href="#top" aria-label="OMG home">
+      <span>OMG</span>
+      <small>Omni-Modal Motion Generation for Generalist Humanoid Control</small>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Toggle navigation">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <div class="nav-links" id="nav-links">
+      <a href="#teaser">Teaser</a>
+      <a href="#overview">Overview</a>
+      <a href="#data">Data</a>
+      <a href="#model">Method</a>
+      <a href="#results">Results</a>
+      <a href="#citation">Citation</a>
+    </div>
+  </nav>
+
+  <main id="top">
+    <section class="hero-section">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">Project Page</p>
+          <h1>
+            <span class="title-acronym">OMG:</span>
+            <span class="title-word"><span class="title-initial">O</span>mni-Modal</span>
+            <span class="title-word"><span class="title-initial">M</span>otion</span>
+            <span class="title-word"><span class="title-initial">G</span>eneration</span>
+            <span class="title-word">for Generalist Humanoid Control</span>
+          </h1>
+          <p class="hero-summary">
+            OMG learns a generalist motion generator that converts diverse human intent signals into
+            trackable whole-body trajectories for Unitree G1 control.
+          </p>
+
+          <div class="authors">
+            <a href="https://knightnemo.github.io/" target="_blank" rel="noopener">Siqiao Huang</a><sup>*</sup>,
+            <a href="https://kunying-lee.github.io/" target="_blank" rel="noopener">Kun-Ying Lee</a><sup>*</sup>,
+            <a href="https://github.com/Dongming-Qiao" target="_blank" rel="noopener">Dongming Qiao</a><sup>*</sup>,
+            <a href="https://guanqihe.github.io/" target="_blank" rel="noopener">Guanqi He</a><sup>*</sup>,
+            <a href="https://github.com/Andromeda1101" target="_blank" rel="noopener">Zhenyu Wang</a>,
+            <a href="https://liyitang22.github.io/" target="_blank" rel="noopener">Yitang Li</a>,
+            <a href="https://zst1406217.github.io/" target="_blank" rel="noopener">Shaoting Zhu</a>,
+            <a href="https://hangzhaomit.github.io/index.html" target="_blank" rel="noopener">Hang Zhao</a><sup>&dagger;</sup>
+          </div>
+
+          <div class="affiliations">
+            <p>Tsinghua University</p>
+            <p><sup>*</sup> Equal contribution &nbsp; <sup>&dagger;</sup> Corresponding author</p>
+          </div>
+
+          <div class="link-row" aria-label="Project links">
+            <a class="button button-primary" href="https://arxiv.org/" target="_blank" rel="noopener">
+              <span class="button-icon button-icon-arxiv" aria-hidden="true"></span>
+              <span>arXiv</span>
+            </a>
+            <a class="button button-secondary" href="https://github.com/Tsinghua-MARS-Lab/OMG" target="_blank" rel="noopener">
+              <span class="button-icon button-icon-github" aria-hidden="true"></span>
+              <span>Code</span>
+            </a>
+            <a class="button button-secondary" href="#citation">
+              <span class="button-icon button-icon-cite" aria-hidden="true"></span>
+              <span>Cite</span>
+            </a>
+          </div>
+        </div>
+
+        <figure class="hero-figure">
+          <img src="./static/images/omg/overview.png" alt="OMG overview showing OMG-Data, OMG-DiT, motion tracking, real G1 execution, and omni-modal control.">
+        </figure>
+      </div>
+    </section>
+
+    <section class="section teaser-section" id="teaser" aria-labelledby="teaser-title">
+      <div class="container">
+        <div class="section-heading compact">
+          <p class="eyebrow">Teaser Video</p>
+          <h2 id="teaser-title">Omni-modal control in real time.</h2>
+          <p>OMG turns diverse conditioning modalities into executable Unitree G1 whole-body motions through a generator-tracker hierarchy.</p>
+        </div>
+        <div class="video-frame">
+          <video controls playsinline preload="metadata" poster="./static/images/omg/main-video-poster.jpg">
+            <source src="./static/OMG-demo.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      </div>
+    </section>
+
+    <section class="section overview-section" id="overview" aria-labelledby="overview-title">
+      <div class="container">
+        <div class="overview-grid">
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h2 id="overview-title">
+              Toward Generalist Humanoid Control
+              <span class="overview-title-line">through</span>
+              <span class="overview-title-line overview-title-accent">Motion Generation</span>
+            </h2>
+          </div>
+          <div class="body-copy">
+            <p>
+              Humanoid whole-body control has made rapid progress, but <strong class="accent-red">RL-based methods</strong>
+              remain tied to <em>narrow skill policies</em> and <em>heavy reward engineering</em>, while
+              <strong class="accent-red">motion-tracking methods</strong> still require a reference motion at
+              inference time. This leaves an important missing layer: a <strong class="accent-red">motion generator</strong>
+              that can translate <em>high-level, multi-modal intent</em> into future robot motion before a
+              low-level controller executes it.
+            </p>
+            <p>
+              The system follows a <strong class="accent-red">generator-tracker hierarchy</strong>. <strong class="accent-red">OMG-DiT</strong>
+              predicts future trajectories from <em>language</em>, <em>audio</em>, <em>human reference motion</em>,
+              <em>motion history</em>, and <em>compositions of these conditions</em> in real time; a pretrained
+              motion tracker then converts those references into <strong>physically executable Unitree G1 trajectories</strong>.
+            </p>
+            <p>
+              This hierarchy is empowered by <strong class="accent-red">OMG-Data</strong>, a <strong>1174.66-hour omni-modal
+              humanoid motion corpus</strong> acquired by <em>retargeting</em>, <em>filtering</em>, <em>annotating</em>,
+              and <em>aligning</em> publicly available data into the <strong class="accent-red">Unitree G1 motion space</strong>.
+              New control interfaces can be added through <em>lightweight encoders</em> while reusing the
+              <strong>pretrained motion prior</strong>.
+            </p>
+          </div>
+        </div>
+
+        <div class="overview-contributions" id="contributions" aria-labelledby="contributions-title">
+          <p class="eyebrow" id="contributions-title">Contributions</p>
+          <div class="contribution-list">
+            <article class="contribution-item">
+              <span>01</span>
+              <div>
+                <h3>OMG framework</h3>
+                <p>
+                  Unifies diverse human intent signals under a generator-tracker hierarchy that
+                  maps conditions into physically executable robot trajectories.
+                </p>
+              </div>
+            </article>
+            <article class="contribution-item">
+              <span>02</span>
+              <div>
+                <h3>OMG-Data</h3>
+                <p>
+                  Curates a large-scale omni-modal humanoid corpus through retargeting,
+                  filtering, annotation, and alignment into the Unitree G1 motion space.
+                </p>
+              </div>
+            </article>
+            <article class="contribution-item">
+              <span>03</span>
+              <div>
+                <h3>OMG-DiT</h3>
+                <p>
+                  Introduces a diffusion-based backbone with extensible and compositional
+                  conditioning from language, audio, and human reference motions.
+                </p>
+              </div>
+            </article>
+            <article class="contribution-item">
+              <span>04</span>
+              <div>
+                <h3>Foundation Model Behaviors</h3>
+                <p>
+                  Demonstrates state-of-the-art omni-modal control, model scaling,
+                  sample-efficient adaptation, and zero-shot composition of control signals.
+                </p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section data-section" id="data" aria-labelledby="data-title">
+      <div class="container split-layout">
+        <div class="section-copy">
+          <p class="eyebrow">OMG-Data</p>
+          <h2 id="data-title"><span class="accent-red">1174.66</span> hours of robot-executable omni-modal motion data.</h2>
+          <p>
+            OMG-Data aggregates heterogeneous graphics and humanoid datasets, validates and segments
+            the raw clips, retargets motions into Unitree G1 embodiment, and filters physically invalid
+            trajectories through simulation-in-the-loop screening.
+          </p>
+          <div class="stat-grid">
+            <div class="stat-card">
+              <strong>1174.66h</strong>
+              <span>Total processed data</span>
+            </div>
+            <div class="stat-card">
+              <strong>1166.6h</strong>
+              <span>Text-labeled motion</span>
+            </div>
+            <div class="stat-card">
+              <strong>958.77h</strong>
+              <span>Human reference motion</span>
+            </div>
+            <div class="stat-card">
+              <strong>191.6h</strong>
+              <span>Audio-conditioned motion</span>
+            </div>
+          </div>
+        </div>
+        <figure class="paper-figure">
+          <img src="./static/images/omg/dataset-statistics.png" alt="Dataset statistics for OMG-Data across text, audio, and human reference modalities.">
+        </figure>
+      </div>
+    </section>
+
+    <section class="section model-section" id="model" aria-labelledby="model-title">
+      <div class="container split-layout reversed">
+        <figure class="paper-figure">
+          <img src="./static/images/omg/method.png" alt="OMG-DiT architecture with shared diffusion backbone and modality-specific condition encoders.">
+        </figure>
+        <div class="section-copy">
+          <p class="eyebrow">OMG-DiT</p>
+          <h2 id="model-title">One diffusion backbone, many control modalities.</h2>
+          <p>
+            OMG-DiT decouples the motion prior from the conditioning modality. A shared denoising
+            transformer models feasible Unitree G1 motion, while language, music, and human
+            reference motion can all condition the generator through modality-specific encoders,
+            cross-attention, FiLM adapters, and classifier-free guidance.
+          </p>
+        </div>
+        <div class="method-list">
+          <div>
+            <h3>Language conditioning</h3>
+            <p>Motion history and language instructions enter the shared motion prior through global context tokens.</p>
+          </div>
+          <div>
+            <h3>Music conditioning</h3>
+            <p>Frame-aligned music and audio cues modulate timing, rhythm, and style throughout denoising.</p>
+          </div>
+          <div>
+            <h3>Human reference motion</h3>
+            <p>Reference trajectories condition the generator with per-frame motion guidance for whole-body control.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section results-section" id="results" aria-labelledby="results-title">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow">Results Highlights</p>
+          <h2 id="results-title">Demo videos by control signal.</h2>
+          <p>
+            OMG turns different conditioning modalities into executable G1 whole-body motion. The
+            composition demo is a continuous take where the robot switches control signals and
+            modalities in real time.
+          </p>
+        </div>
+
+        <div class="demo-gallery" aria-label="OMG qualitative demo videos">
+          <article class="demo-category">
+            <div class="demo-category-copy">
+              <p class="demo-kicker">Language</p>
+              <h3>Text-conditioned whole-body motion</h3>
+              <p>
+                Natural-language instructions directly steer future robot motion, from recognizable
+                stylized actions to whole-body locomotion.
+              </p>
+            </div>
+            <div class="demo-videos demo-carousel" data-demo-carousel>
+              <div class="demo-carousel-window">
+                <figure class="demo-clip demo-slide is-active" data-carousel-slide>
+                  <video controls playsinline preload="metadata">
+                    <source src="./static/results/language-dinosaur.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                  </video>
+                  <figcaption>Dinosaur prompt.</figcaption>
+                </figure>
+                <figure class="demo-clip demo-slide" data-carousel-slide hidden>
+                  <video controls playsinline preload="metadata">
+                    <source src="./static/results/language-aeroplane.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                  </video>
+                  <figcaption>Aeroplane prompt.</figcaption>
+                </figure>
+                <figure class="demo-clip demo-slide" data-carousel-slide hidden>
+                  <video controls playsinline preload="metadata">
+                    <source src="./static/results/language-zombie.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                  </video>
+                  <figcaption>Zombie prompt.</figcaption>
+                </figure>
+              </div>
+              <div class="demo-carousel-nav" aria-label="Language demo gallery controls">
+                <button class="demo-carousel-button" type="button" data-carousel-prev aria-label="Previous language demo" title="Previous language demo">‹</button>
+                <div class="demo-carousel-dots" aria-label="Language demos">
+                  <button class="demo-dot is-active" type="button" data-carousel-dot aria-label="Show dinosaur prompt" title="Dinosaur prompt" aria-current="true"></button>
+                  <button class="demo-dot" type="button" data-carousel-dot aria-label="Show aeroplane prompt" title="Aeroplane prompt"></button>
+                  <button class="demo-dot" type="button" data-carousel-dot aria-label="Show zombie prompt" title="Zombie prompt"></button>
+                </div>
+                <button class="demo-carousel-button" type="button" data-carousel-next aria-label="Next language demo" title="Next language demo">›</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="demo-category">
+            <div class="demo-category-copy">
+              <p class="demo-kicker">Audio</p>
+              <h3>Audio-conditioned motion</h3>
+              <p>
+                Audio cues shape rhythm, timing, and style while the tracker keeps the generated
+                motion executable on the Unitree G1.
+              </p>
+            </div>
+            <div class="demo-videos demo-carousel" data-demo-carousel>
+              <div class="demo-carousel-window">
+                <figure class="demo-clip demo-slide is-active" data-carousel-slide>
+                  <video controls playsinline preload="metadata">
+                    <source src="./static/results/audio-liebestraume.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                  </video>
+                  <figcaption>Liebestraume conditioning.</figcaption>
+                </figure>
+                <figure class="demo-clip demo-slide" data-carousel-slide hidden>
+                  <video controls playsinline preload="metadata">
+                    <source src="./static/results/audio-scherzo.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                  </video>
+                  <figcaption>Scherzo conditioning.</figcaption>
+                </figure>
+                <figure class="demo-clip demo-slide" data-carousel-slide hidden>
+                  <video controls playsinline preload="metadata">
+                    <source src="./static/results/audio-paper-rings.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                  </video>
+                  <figcaption>Paper Rings conditioning.</figcaption>
+                </figure>
+              </div>
+              <div class="demo-carousel-nav" aria-label="Audio demo gallery controls">
+                <button class="demo-carousel-button" type="button" data-carousel-prev aria-label="Previous audio demo" title="Previous audio demo">‹</button>
+                <div class="demo-carousel-dots" aria-label="Audio demos">
+                  <button class="demo-dot is-active" type="button" data-carousel-dot aria-label="Show Liebestraume conditioning" title="Liebestraume conditioning" aria-current="true"></button>
+                  <button class="demo-dot" type="button" data-carousel-dot aria-label="Show Scherzo conditioning" title="Scherzo conditioning"></button>
+                  <button class="demo-dot" type="button" data-carousel-dot aria-label="Show Paper Rings conditioning" title="Paper Rings conditioning"></button>
+                </div>
+                <button class="demo-carousel-button" type="button" data-carousel-next aria-label="Next audio demo" title="Next audio demo">›</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="demo-category">
+            <div class="demo-category-copy">
+              <p class="demo-kicker">Human Ref</p>
+              <h3>Reference-guided control</h3>
+              <p>
+                OMG supports guiding whole-body robot motion with a human reference trajectory, serving as a neural retargeter.
+              </p>
+            </div>
+            <div class="demo-videos">
+              <figure class="demo-clip">
+                <video controls playsinline preload="metadata">
+                  <source src="./static/results/human-reference-motion.mp4" type="video/mp4">
+                  Your browser does not support the video tag.
+                </video>
+                <figcaption>Human reference motion with robot execution.</figcaption>
+              </figure>
+            </div>
+          </article>
+
+          <article class="demo-category demo-category-featured">
+            <div class="demo-category-copy">
+              <p class="demo-kicker">Composition</p>
+              <h3>Real-time modality switching</h3>
+              <p>
+                One continuous shot switches across text, human reference, audio, and composed
+                text-plus-audio conditions without resetting the robot behavior.
+              </p>
+            </div>
+            <div class="demo-videos">
+              <figure class="demo-clip">
+                <video controls playsinline preload="metadata" poster="./static/results/composition-realtime-switching-poster.jpg">
+                  <source src="./static/results/composition-realtime-switching.mp4" type="video/mp4">
+                  Your browser does not support the video tag.
+                </video>
+                <figcaption>Continuous one-take switching across control signals.</figcaption>
+              </figure>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section citation-section" id="citation" aria-labelledby="citation-title">
+      <div class="container citation-grid">
+        <div>
+          <p class="eyebrow">Citation</p>
+          <h2 id="citation-title">Reference OMG.</h2>
+          <p>
+            If you find this work useful, consider citing:
+          </p>
+        </div>
+        <pre><code>TBD
+</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>OMG: Omni-Modal Motion Generation for Generalist Humanoid Control.</p>
+    </div>
+  </footer>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var button = document.querySelector(".nav-toggle");
+      var links = document.getElementById("nav-links");
+
+      button.addEventListener("click", function () {
+        var open = button.getAttribute("aria-expanded") === "true";
+        button.setAttribute("aria-expanded", String(!open));
+        links.classList.toggle("is-open");
+      });
+
+      links.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          button.setAttribute("aria-expanded", "false");
+          links.classList.remove("is-open");
+        });
+      });
+
+      document.querySelectorAll("[data-demo-carousel]").forEach(function (carousel) {
+        var slides = Array.prototype.slice.call(carousel.querySelectorAll("[data-carousel-slide]"));
+        var dots = Array.prototype.slice.call(carousel.querySelectorAll("[data-carousel-dot]"));
+        var previous = carousel.querySelector("[data-carousel-prev]");
+        var next = carousel.querySelector("[data-carousel-next]");
+        var activeIndex = slides.findIndex(function (slide) {
+          return slide.classList.contains("is-active");
+        });
+
+        if (activeIndex < 0) {
+          activeIndex = 0;
+        }
+
+        function showSlide(index) {
+          activeIndex = (index + slides.length) % slides.length;
+
+          slides.forEach(function (slide, slideIndex) {
+            var active = slideIndex === activeIndex;
+            var video = slide.querySelector("video");
+
+            slide.classList.toggle("is-active", active);
+            slide.hidden = !active;
+            slide.setAttribute("aria-hidden", String(!active));
+
+            if (!active && video) {
+              video.pause();
+            }
+          });
+
+          dots.forEach(function (dot, dotIndex) {
+            var active = dotIndex === activeIndex;
+            dot.classList.toggle("is-active", active);
+
+            if (active) {
+              dot.setAttribute("aria-current", "true");
+            } else {
+              dot.removeAttribute("aria-current");
+            }
+          });
+        }
+
+        if (previous) {
+          previous.addEventListener("click", function () {
+            showSlide(activeIndex - 1);
+          });
+        }
+
+        if (next) {
+          next.addEventListener("click", function () {
+            showSlide(activeIndex + 1);
+          });
+        }
+
+        dots.forEach(function (dot, dotIndex) {
+          dot.addEventListener("click", function () {
+            showSlide(dotIndex);
+          });
+        });
+
+        showSlide(activeIndex);
+      });
+    });
+  </script>
+</body>
+</html>
