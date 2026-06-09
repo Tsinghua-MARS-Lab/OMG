@@ -578,11 +578,14 @@ sup {
 }
 
 .paper-figure {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   margin: 0;
+  overflow: visible;
 }
 
 .paper-figure img {
-  background: #fff;
   width: 100%;
 }
 
