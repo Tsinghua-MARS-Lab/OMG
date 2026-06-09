@@ -30,7 +30,7 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 17px;
+  font-size: 15.5px;
   line-height: 1.6;
   margin: 0;
   overflow-x: hidden;
@@ -53,7 +53,7 @@ a:hover {
 
 .container {
   margin: 0 auto;
-  max-width: 1280px;
+  max-width: 1120px;
   padding: 0 24px;
   width: 100%;
 }
@@ -65,7 +65,7 @@ a:hover {
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  min-height: 50px;
+  min-height: 48px;
   padding: 0 24px;
   position: sticky;
   top: 0;
@@ -89,7 +89,7 @@ a:hover {
 .wordmark span {
   color: var(--red);
   font-family: var(--serif);
-  font-size: 1.42rem;
+  font-size: 1.36rem;
   font-weight: 700;
   line-height: 1;
 }
@@ -97,7 +97,7 @@ a:hover {
 .wordmark small {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.2;
@@ -115,7 +115,7 @@ a:hover {
 
 .nav-links a {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 700;
 }
 
@@ -146,8 +146,8 @@ a:hover {
     linear-gradient(180deg, #fffdf8 0%, var(--paper) 100%);
   border-bottom: 1px solid var(--line);
   display: flex;
-  min-height: calc(100svh - 50px);
-  padding: 14px 0;
+  min-height: calc(100svh - 48px);
+  padding: 12px 0;
 }
 
 .hero-grid {
@@ -159,7 +159,7 @@ a:hover {
 
 .hero-copy {
   margin: 0 auto;
-  max-width: 1380px;
+  max-width: 1120px;
   min-width: 0;
   text-align: center;
 }
@@ -189,10 +189,10 @@ h2 {
 }
 
 h1 {
-  font-size: clamp(2.95rem, 4.05vw, 4.05rem);
+  font-size: clamp(2.65rem, 3.55vw, 3.45rem);
   line-height: 0.98;
   margin: 0 auto 13px;
-  max-width: 1320px;
+  max-width: 1080px;
   overflow-wrap: break-word;
 }
 
@@ -221,7 +221,7 @@ h1 {
 }
 
 h2 {
-  font-size: 3.2rem;
+  font-size: 2.75rem;
   line-height: 1.02;
   margin-bottom: 18px;
   max-width: 850px;
@@ -237,7 +237,7 @@ h3 {
 
 .hero-summary {
   color: #312b27;
-  font-size: 1.16rem;
+  font-size: 1.08rem;
   line-height: 1.34;
   margin: 0 auto 10px;
   max-width: 820px;
@@ -245,7 +245,7 @@ h3 {
 
 .authors {
   color: var(--ink);
-  font-size: 0.96rem;
+  font-size: 0.9rem;
   font-weight: 600;
   line-height: 1.42;
   margin-bottom: 5px;
@@ -265,7 +265,7 @@ sup {
 
 .affiliations {
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   line-height: 1.25;
   margin: 0 auto 10px;
   max-width: 760px;
@@ -288,7 +288,7 @@ sup {
   border-radius: 7px;
   display: inline-flex;
   gap: 8px;
-  font-size: 0.96rem;
+  font-size: 0.9rem;
   font-weight: 800;
   justify-content: center;
   min-height: 34px;
@@ -367,7 +367,7 @@ sup {
   border: 0;
   box-shadow: none;
   margin: 0 auto;
-  max-width: 1064px;
+  max-width: 900px;
   overflow: visible;
   width: 100%;
 }
@@ -546,7 +546,7 @@ sup {
 }
 
 .section-copy h2 {
-  font-size: 3rem;
+  font-size: 2.75rem;
 }
 
 .stat-grid {
@@ -565,7 +565,7 @@ sup {
   color: var(--red);
   display: block;
   font-family: var(--serif);
-  font-size: 2rem;
+  font-size: 1.85rem;
   line-height: 1;
   margin-bottom: 10px;
 }
