@@ -1,0 +1,12 @@
+_target_: omg.generation.denoisers.transformer.MotionTransformerDenoiser
+input_dim: ${representation.feat_dim}
+hidden_dim: 1792
+num_layers: 19
+num_heads: 28
+mlp_ratio: 4.0
+text_dim: 768
+dropout: 0.1
+rope_base: 10000.0
+audio_local_attn_window: 8
+human_motion_local_attn_window: 2
+use_human_motion_local_attn: false

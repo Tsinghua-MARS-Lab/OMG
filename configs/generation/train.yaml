@@ -1,0 +1,29 @@
+defaults:
+  - data: omg_data
+  - representation: 125d
+  - denoiser: transformer
+  - diffusion: guided_x0
+  - loss: full
+  - model: motion_generator
+  - trainer: 1gpu
+  - logger: none
+  - callbacks: default
+  - paths: default
+  - _self_
+  - exp: base
+
+seed: 1234
+task: fit
+ckpt_path: null
+init_weights_only_ckpt: null
+init_weights_strict: true
+exp_name: unset
+output_dir: ${paths.output_root}/${exp_name}
+checkpoint_io:
+  _target_: omg.runtime.checkpoint_io.DirectTorchCheckpointIO
+
+# Keep Hydra metadata on the same filesystem as training artifacts.
+hydra:
+  run:
+    dir: ${output_dir}/hydra
+  output_subdir: .hydra

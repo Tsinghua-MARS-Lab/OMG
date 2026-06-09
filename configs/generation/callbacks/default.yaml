@@ -1,0 +1,25 @@
+checkpoint:
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  dirpath: ${output_dir}/checkpoints
+  filename: s{step:06d}
+  every_n_train_steps: 5000
+  save_top_k: -1
+  save_last: true
+global_step_progress:
+  _target_: omg.callbacks.global_step_progress.GlobalStepProgressBar
+lr_monitor:
+  _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  logging_interval: step
+grad_norm_monitor: null
+training_diagnostics: null
+divergence_guard:
+  _target_: omg.callbacks.divergence_guard.DivergenceGuard
+  dirpath: ${output_dir}/diagnostics
+  warmup_steps: 2000
+  max_loss: 10.0
+  loss_patience: 4
+  max_grad_norm: 1000.0
+  capture_loss_term_grad_norms: false
+  norm_type: 2.0
+speed_timer:
+  _target_: omg.callbacks.speed_timer.SpeedTimer

@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /model: motion_generator
+  - override /denoiser: transformer
+  - override /diffusion: guided_x0
+  - override /loss: full
+
+exp_name: base
+model:
+  diffusion_target: future

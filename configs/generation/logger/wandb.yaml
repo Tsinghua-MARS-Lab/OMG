@@ -1,0 +1,6 @@
+_target_: pytorch_lightning.loggers.WandbLogger
+enabled: true
+project: omg
+name: ${exp_name}
+save_dir: ${output_dir}
+log_model: false

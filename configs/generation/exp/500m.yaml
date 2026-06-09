@@ -1,0 +1,30 @@
+# @package _global_
+defaults:
+  - override /model: motion_generator
+  - override /denoiser: transformer_500m
+  - override /diffusion: guided_x0
+  - override /loss: full
+
+exp_name: 500m
+model:
+  diffusion_target: future
+  optimizer:
+    lr: 9.0e-5
+    weight_decay: 0.01
+  scheduler:
+    type: linear_warmup_cosine
+    warmup_steps: 2000
+    warmup_start_factor: 1.0e-4
+    t_max: 120000
+    eta_min: 1.0e-6
+trainer:
+  max_steps: 120000
+  val_check_interval: 2000
+  accumulate_grad_batches: 3
+callbacks:
+  checkpoint:
+    every_n_train_steps: 2000
+data:
+  loader_opts:
+    train:
+      batch_size: 64

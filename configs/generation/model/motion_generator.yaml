@@ -1,0 +1,34 @@
+_target_: omg.generation.models.motion_generator.MotionGenerator
+_recursive_: false
+representation: ${representation}
+denoiser: ${denoiser}
+diffusion: ${diffusion}
+loss: ${loss}
+text_encoder:
+  _target_: omg.generation.conditions.t5.FrozenT5TextEncoder
+  model_name: ${paths.models_root}/t5-base-local
+  max_length: 50
+  output_dim: 768
+diffusion_target: future
+condition_dim: ${denoiser.hidden_dim}
+text_mask_prob: 0.3
+history_mask_prob: 0.1
+use_audio: false
+audio_dim: 35
+audio_mask_prob: 0.1
+use_human_motion: false
+human_motion_dim: 66
+human_motion_mask_prob: 0.5
+frame_cond_injection: per_layer_film
+log_loss_term_grad_norms: true
+loss_term_grad_norm_every_n_steps: 100
+loss_term_grad_norm_norm_type: 2.0
+optimizer:
+  lr: 1.0e-4
+  weight_decay: 0.01
+scheduler:
+  type: linear_warmup_cosine
+  warmup_steps: 2000
+  warmup_start_factor: 1.0e-4
+  t_max: 180000
+  eta_min: 1.0e-6

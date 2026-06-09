@@ -1,0 +1,9 @@
+_target_: omg.generation.diffusion.guided.GuidedDiffusion
+timesteps: 1000
+objective: pred_x0
+beta_schedule: cosine
+train_timestep_respacing: ""
+test_timestep_respacing: "50"
+sampler: ddim
+ddim_eta: 0.0
+cfg_scale: 2.5
