@@ -363,8 +363,12 @@ sup {
 }
 
 .hero-figure {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   margin: 0 auto;
   max-width: 1064px;
+  overflow: visible;
   width: 100%;
 }
 
