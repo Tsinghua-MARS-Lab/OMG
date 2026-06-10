@@ -29,6 +29,7 @@ from omg.benchmarks.runners.common import (
     _cfg_output_name,
     _cfg_scale_json,
     _config_dir,
+    _dataset_filter_tokens_from_records,
     _dataset_indices,
     _device,
     _embedding_distribution_metrics,
@@ -661,10 +662,14 @@ def _output_dir(args: argparse.Namespace) -> Path:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark a generation checkpoint on fixed G1 motion samples.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark a generation checkpoint on fixed G1 motion samples.",
+        allow_abbrev=False,
+    )
     parser.add_argument("--ckpt_path", default=None)
     parser.add_argument("--ckpts", nargs="+", default=None)
     parser.add_argument("--exp", required=True)
+    parser.add_argument("--data", default="omg_data")
     parser.add_argument("--output_dir", default=None)
     parser.add_argument("--split", choices=["train", "val", "test"], default="test")
     parser.add_argument(
@@ -672,8 +677,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--reference_split",
         dest="reference_split",
         choices=["train", "val", "test"],
-        default="train",
-        help="Real-motion split used as the distribution baseline for FID/KID; defaults to the training split.",
+        default="test",
+        help="Real-motion split used as the distribution baseline for FID/KID; defaults to the test split.",
     )
     parser.add_argument("--num_samples", type=int, default=None, help="Deprecated alias for --num-texts.")
     parser.add_argument("--num-texts", "--num_texts", dest="num_texts", type=int, default=1024)
@@ -699,7 +704,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--motion_key",
         choices=["qpos_36", "motion_features", "body_link_pos_local", "body_pos_local"],
-        default="qpos_36",
+        default="body_pos_local",
     )
     parser.add_argument("--evaluator_checkpoint", required=True)
     parser.add_argument("--samples_path", default=None)
@@ -716,8 +721,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--text-only",
         "--text_only",
         dest="text_only",
-        action="store_true",
-        help="Disable frame-level audio/human conditions after checkpoint loading; useful for pure text-to-motion evaluation of multimodal checkpoints.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Disable frame-level audio/human conditions after checkpoint loading; useful for pure text-to-motion evaluation of multimodal checkpoints. Use --no-text-only to keep all conditions enabled.",
     )
     parser.add_argument("--multimodality-repeats", "--multimodality_repeats", dest="multimodality_repeats", type=int, default=1)
     parser.add_argument("--multimodality-pairs", "--multimodality_pairs", dest="multimodality_pairs", type=int, default=10)
@@ -1295,22 +1301,26 @@ def main(argv: list[str] | None = None) -> None:
             config_name="train",
             overrides=[
                 f"exp={args.exp}",
-                "data=omg_data",
+                f"data={args.data}",
                 "logger=none",
                 "trainer=1gpu",
                 *args.overrides,
             ],
         )
 
-    datasets = _build_datasets(cfg, args.split, include=args.datasets)
-    reference_datasets = _build_datasets(cfg, args.reference_split, include=args.datasets)
     sample_path = _sample_file_path(output_dir, args.samples_path)
     if args.samples_path is not None and not sample_path.exists():
         raise FileNotFoundError(f"--samples_path does not exist: {sample_path}")
+    records = None
     if sample_path.exists():
         records = _load_sample_records(sample_path)
         print(f"[INFO] Loaded {len(records)} sample records from {sample_path.resolve()}")
-    else:
+    dataset_include = args.datasets if args.datasets is not None else (
+        _dataset_filter_tokens_from_records(records) if records is not None else None
+    )
+    datasets = _build_datasets(cfg, args.split, include=dataset_include)
+    reference_datasets = _build_datasets(cfg, args.reference_split, include=dataset_include)
+    if records is None:
         records = _select_sample_records(datasets, args.num_texts, args.seed)
     reference_records = _select_sample_records(
         reference_datasets,

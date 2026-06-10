@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 import torch.nn as nn
+
+from omg.core.paths import resolve_repo_path
 
 
 class FrozenT5TextEncoder(nn.Module):
@@ -20,10 +24,17 @@ class FrozenT5TextEncoder(nn.Module):
                 "Install OMG with the training extras."
             ) from exc
 
-        self.model_name = str(model_name)
+        self.model_name = self._resolve_model_name(str(model_name))
         self.max_length = int(max_length)
-        self.tokenizer = T5Tokenizer.from_pretrained(self.model_name)
-        self.encoder = T5EncoderModel.from_pretrained(self.model_name)
+        try:
+            self.tokenizer = T5Tokenizer.from_pretrained(self.model_name)
+            self.encoder = T5EncoderModel.from_pretrained(self.model_name)
+        except OSError as exc:
+            raise OSError(
+                f"Failed to load T5 text encoder from {self.model_name!r}. "
+                "Download t5-base to models/t5-base-local, set OMG_MODELS_ROOT, "
+                "or override model.text_encoder.model_name with a valid local path or Hugging Face model id."
+            ) from exc
         self.encoder.eval()
         for param in self.encoder.parameters():
             param.requires_grad_(False)
@@ -34,6 +45,27 @@ class FrozenT5TextEncoder(nn.Module):
             self.proj = nn.Identity()
         else:
             self.proj = nn.Linear(hidden_dim, self.output_dim)
+
+    @staticmethod
+    def _resolve_model_name(model_name: str) -> str:
+        path = Path(model_name).expanduser()
+        first_part = path.parts[0] if path.parts else ""
+        is_local_path = (
+            path.is_absolute()
+            or str(path).startswith((".", "~"))
+            or first_part in {"models", "assets", "outputs", "checkpoints"}
+            or path.exists()
+        )
+        if not is_local_path:
+            return model_name
+        resolved = path if path.is_absolute() else resolve_repo_path(path)
+        if not resolved.exists():
+            raise FileNotFoundError(
+                f"T5 text encoder path does not exist: {resolved}. "
+                "Download t5-base to models/t5-base-local, set OMG_MODELS_ROOT, "
+                "or override model.text_encoder.model_name with a valid local path or Hugging Face model id."
+            )
+        return str(resolved)
 
     def forward(
         self,

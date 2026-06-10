@@ -27,6 +27,7 @@ from omg.benchmarks.runners.common import (
     SampleRecord,
     _build_datasets,
     _config_dir,
+    _dataset_filter_tokens_from_records,
     _device,
     _embedding_distribution_metrics,
     _encode_motion_embeddings,
@@ -618,7 +619,10 @@ def _run_humanref_artifact(args: argparse.Namespace, output_dir: Path, model: An
     return BenchmarkResult(benchmark=benchmark)
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark externally generated G1 qpos artifacts.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark externally generated G1 qpos artifacts.",
+        allow_abbrev=False,
+    )
     parser.add_argument("--mode", choices=["text", "audio", "humanref"], required=True)
     parser.add_argument("--generated_qpos", required=True)
     parser.add_argument("--reference_qpos", default=None)
@@ -698,7 +702,7 @@ def main(argv: list[str] | None = None) -> None:
     if (args.reference_qpos is None and not can_collect_reference_from_meta) or args.mode == "audio" or (args.samples_path is not None and not can_collect_reference_from_meta):
         include_datasets = args.datasets
         if include_datasets is None:
-            include_datasets = sorted({record.dataset for record in records})
+            include_datasets = _dataset_filter_tokens_from_records(records)
         datasets = _build_datasets(cfg, args.split, include=include_datasets)
         _validate_sample_records(records, datasets)
     reference_np = valid_np = reference_fps_np = None
