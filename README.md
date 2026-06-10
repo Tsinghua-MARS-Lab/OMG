@@ -14,6 +14,15 @@
   </p>
 </div>
 
+- [x] Training Code
+- [ ] Evaluation Pipelines
+  - [ ] Pretrained Evaluator Checkpoints
+  - [x] Benchmark Code
+- [x] Inference Code
+- [x] Sim-to-Real Deployment Code
+- [ ] OMG-Data
+- [ ] Pretrained Checkpoints
+
 ## Pipeline
 
 The usual end-to-end workflow is:
