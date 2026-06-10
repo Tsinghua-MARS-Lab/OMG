@@ -20,7 +20,7 @@ const requiredSnippets = [
   ["human reference demo source", "./static/results/human-reference-motion.mp4"],
   ["composition demo source", "./static/results/composition-realtime-switching.mp4"],
   ["composition demo poster", "./static/results/composition-realtime-switching-poster.jpg"],
-  ["arxiv link", "https://arxiv.org/"],
+  ["arxiv link", "https://arxiv.org/abs/2606.10340"],
   ["github code link", "https://github.com/Tsinghua-MARS-Lab/OMG"],
   ["cite link", 'href="#citation"'],
   ["arxiv icon", "button-icon-arxiv"],
