@@ -336,7 +336,7 @@ dataset_opts:
       audio_dir: ${paths.data_root}/omg_data/original/finedance/music_npy
     beat2_original_humanref:
       _target_: omg.data.g1_motion.G1MotionDataset
-      dataset_root: ${paths.data_root}/omg_data/original
+      dataset_root: ${paths.data_root}/omg_data/original/beat2_english/g1
       info_path: ${paths.data_root}/omg_data/original/beat2_english/info.yaml
       split: train
       sequence_duration: 2.0
@@ -720,7 +720,7 @@ dataset_opts:
       eval_num_windows: 3
     beat2_original_humanref_val:
       _target_: omg.data.g1_motion.G1MotionDataset
-      dataset_root: ${paths.data_root}/omg_data/original
+      dataset_root: ${paths.data_root}/omg_data/original/beat2_english/g1
       info_path: ${paths.data_root}/omg_data/original/beat2_english/info.yaml
       split: val
       sequence_duration: 2.0
@@ -1106,7 +1106,7 @@ dataset_opts:
       eval_num_windows: 3
     beat2_original_humanref_test:
       _target_: omg.data.g1_motion.G1MotionDataset
-      dataset_root: ${paths.data_root}/omg_data/original
+      dataset_root: ${paths.data_root}/omg_data/original/beat2_english/g1
       info_path: ${paths.data_root}/omg_data/original/beat2_english/info.yaml
       split: test
       sequence_duration: 2.0

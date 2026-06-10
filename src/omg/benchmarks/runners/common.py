@@ -19,6 +19,7 @@ from omg.benchmarks.evaluator.representation import (
     motion_input_dim,
 )
 from omg.benchmarks.metrics import diversity, motion_fid, motion_kid
+from omg.core.paths import resolve_repo_path
 from omg.generation.metrics import physical_qpos_metrics
 
 
@@ -38,7 +39,7 @@ class BenchmarkResult:
 
 
 def _config_dir() -> Path:
-    return Path(__file__).resolve().parents[5] / "configs" / "generation"
+    return resolve_repo_path("configs/generation")
 
 
 def _device(name: str) -> torch.device:
@@ -122,6 +123,21 @@ def _write_sample_records(path: Path, records: list[SampleRecord], datasets: dic
             payload["caption"] = str(item.get("caption", ""))
             payload["meta"] = _jsonable(item.get("meta", {}))
             handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _dataset_filter_tokens_from_records(records: list[SampleRecord]) -> list[str]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for record in records:
+        token = str(record.dataset)
+        for suffix in ("_train", "_val", "_test"):
+            if token.endswith(suffix):
+                token = token[: -len(suffix)]
+                break
+        if token not in seen:
+            seen.add(token)
+            tokens.append(token)
+    return tokens
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:

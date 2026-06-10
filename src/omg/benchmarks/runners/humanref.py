@@ -29,6 +29,7 @@ from omg.benchmarks.runners.common import (
     _cfg_scale_json,
     _config_dir,
     _dataset_indices,
+    _dataset_filter_tokens_from_records,
     _device,
     _embedding_distribution_metrics,
     _encode_motion_embeddings,
@@ -70,7 +71,10 @@ END_EFFECTOR_LINKS = (
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark a human-reference-conditioned generation checkpoint.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark a human-reference-conditioned generation checkpoint.",
+        allow_abbrev=False,
+    )
     parser.add_argument("--ckpt_path", default=None)
     parser.add_argument("--ckpts", nargs="+", default=None)
     parser.add_argument("--exp", required=True)
@@ -577,14 +581,18 @@ def main(argv: list[str] | None = None) -> None:
                 *args.overrides,
             ],
         )
-    datasets = _build_datasets(cfg, args.split, include=args.datasets)
     sample_path = _sample_file_path(root_output_dir, args.samples_path)
     if args.samples_path is not None and not sample_path.exists():
         raise FileNotFoundError(f"--samples_path does not exist: {sample_path}")
+    records = None
     if sample_path.exists():
         records = _load_sample_records(sample_path)
         print(f"[INFO] Loaded {len(records)} sample records from {sample_path.resolve()}")
-    else:
+    dataset_include = args.datasets if args.datasets is not None else (
+        _dataset_filter_tokens_from_records(records) if records is not None else None
+    )
+    datasets = _build_datasets(cfg, args.split, include=dataset_include)
+    if records is None:
         records = select_condition_records(
             datasets,
             num_samples=args.num_samples,
