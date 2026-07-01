@@ -821,33 +821,6 @@ pre {
   white-space: pre;
 }
 
-.reference-links {
-  align-self: start;
-  background: #261e1a;
-  border: 1px solid #4d3b33;
-  border-radius: 8px;
-  padding: 20px;
-}
-
-.reference-label {
-  color: #ffc4ba;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  margin: 0 0 10px;
-  text-transform: uppercase;
-}
-
-.reference-links a {
-  color: #fff7ec;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.reference-links a:hover {
-  color: #ffc4ba;
-}
-
 .site-footer {
   background: #100d0c;
   color: #d8cec0;
