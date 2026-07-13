@@ -23,8 +23,8 @@ dataset_opts:
 loader_opts:
   train:
     batch_size: 96
-    num_workers: 0
-    prefetch_factor: null
+    num_workers: 2
+    prefetch_factor: 2
   val:
     batch_size: 16
     num_workers: 2
