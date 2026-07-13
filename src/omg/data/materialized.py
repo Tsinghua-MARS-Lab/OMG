@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +98,55 @@ class MaterializedG1MotionDataset(Dataset):
             spans.append((start, count))
             remaining -= count
         return spans
+
+    def iter_stats_batches(
+        self,
+        *,
+        batch_size: int,
+        max_samples: int | None = None,
+        device: torch.device | str = "cpu",
+        episode_batch_frames: int = 65536,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> Iterator[dict[str, torch.Tensor]]:
+        batch_size = int(batch_size)
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if int(episode_batch_frames) <= 0:
+            raise ValueError(f"episode_batch_frames must be positive, got {episode_batch_frames}")
+        rank = int(rank)
+        world_size = int(world_size)
+        if world_size <= 0 or rank < 0 or rank >= world_size:
+            raise ValueError(f"Invalid rank/world_size: {rank}/{world_size}")
+        effective_total = self.num_samples if max_samples is None else min(self.num_samples, int(max_samples))
+        global_begin = effective_total * rank // world_size
+        global_end = effective_total * (rank + 1) // world_size
+        sample_limit = global_end - global_begin
+        target_device = torch.device(device)
+        emitted = 0
+        first_shard = global_begin // self.shard_size
+        last_shard = (global_end + self.shard_size - 1) // self.shard_size
+        for shard_id in range(first_shard, min(last_shard, self.num_shards)):
+            if emitted >= sample_limit:
+                break
+            shard_name = f"shard_{shard_id:05d}.npz"
+            with np.load(self.split_root / shard_name) as npz:
+                arrays = {
+                    "motion_features": np.asarray(npz["motion_features"]),
+                    "qpos_36": np.asarray(npz["qpos_36"]),
+                    "mask__valid": np.asarray(npz["mask__valid"]),
+                }
+            shard_global_start = shard_id * self.shard_size
+            offset_begin = max(0, global_begin - shard_global_start)
+            offset_end = min(int(arrays["motion_features"].shape[0]), global_end - shard_global_start)
+            for offset in range(offset_begin, offset_end, batch_size):
+                end = min(offset + batch_size, offset_end)
+                yield {
+                    "motion_features": self._tensor(arrays["motion_features"][offset:end]).to(target_device),
+                    "qpos_36": self._tensor(arrays["qpos_36"][offset:end]).to(target_device),
+                    "valid_mask": self._tensor(arrays["mask__valid"][offset:end]).to(target_device),
+                }
+                emitted += end - offset
 
     @staticmethod
     def _tensor(value: np.ndarray) -> torch.Tensor:

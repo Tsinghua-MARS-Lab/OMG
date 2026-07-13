@@ -17,6 +17,7 @@ class DivergenceGuard(Callback):
         dirpath: str,
         warmup_steps: int = 2000,
         max_loss: float | None = None,
+        loss_monitor: str = "loss",
         loss_patience: int = 1,
         max_grad_norm: float | None = None,
         capture_loss_term_grad_norms: bool = False,
@@ -25,6 +26,7 @@ class DivergenceGuard(Callback):
         self.dirpath = Path(dirpath)
         self.warmup_steps = int(warmup_steps)
         self.max_loss = None if max_loss is None else float(max_loss)
+        self.loss_monitor = str(loss_monitor)
         self.loss_patience = max(1, int(loss_patience))
         self.max_grad_norm = None if max_grad_norm is None else float(max_grad_norm)
         self.norm_type = float(norm_type)
@@ -59,7 +61,7 @@ class DivergenceGuard(Callback):
             if self._loss_strikes >= self.loss_patience:
                 raise RuntimeError(
                     f"DivergenceGuard stopped training at step={step}: "
-                    f"loss={loss:.6g} exceeded max_loss={self.max_loss:.6g} "
+                    f"{self.loss_monitor}={loss:.6g} exceeded max_loss={self.max_loss:.6g} "
                     f"for {self._loss_strikes} checked train batches"
                 )
         else:
@@ -82,8 +84,8 @@ class DivergenceGuard(Callback):
         )
 
     def _extract_loss(self, outputs: Any, diagnostics: dict[str, Any]) -> float | None:
-        value = diagnostics.get("loss")
-        if value is None and isinstance(outputs, dict):
+        value = diagnostics.get(self.loss_monitor)
+        if value is None and self.loss_monitor == "loss" and isinstance(outputs, dict):
             value = outputs.get("loss")
         if torch.is_tensor(value):
             value = float(value.detach().float().cpu().item())

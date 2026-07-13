@@ -2,122 +2,24 @@ _target_: omg.data.datamodule.GenerationDataModule
 limit_each_trainset: null
 train_subset_ratio: null
 rotation_representation: ${representation.rotation_representation}
+
 dataset_opts:
   train:
-    100style_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/100style_original_filtered
-      split: train
-    amass_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/amass_original_filtered
-      split: train
-    bones_seed_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/bones_seed_original_filtered
-      split: train
-    fitness_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/fitness_original_filtered
-      split: train
-    humanml_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/humanml_original_filtered
-      split: train
-    idea400_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/idea400_original_filtered
-      split: train
-    lafan1_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/lafan1_original_filtered
-      split: train
-    motiongv_original_filtered_part00_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part00
-      split: train
-    motiongv_original_filtered_part01_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part01
-      split: train
-    motiongv_original_filtered_part02_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part02
-      split: train
-    motiongv_original_filtered_part03_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part03
-      split: train
-    motiongv_original_filtered_part04_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part04
-      split: train
-    motiongv_original_filtered_part05_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part05
-      split: train
-    motiongv_original_filtered_part06_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part06
-      split: train
-    motiongv_original_filtered_part07_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motiongv_original_filtered_part07
-      split: train
-    motionllama_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/motionllama_original_filtered
-      split: train
-    omomo_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/omomo_original_filtered
-      split: train
-    permo_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/permo_original_filtered
-      split: train
-    snapmogen_original_filtered_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/snapmogen_original_filtered
-      split: train
-    aioz_gdance_original_audio_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/aioz_gdance_original_audio
-      split: train
-    aistpp_original_audio_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/aistpp_original_audio
-      split: train
-    choreomaster_original_audio_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/choreomaster_original_audio
-      split: train
-    compas3d_original_audio_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/compas3d_original_audio
-      split: train
-    opendance_original_audio_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/opendance_original_audio
-      split: train
-    finedance_original_audio_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/finedance_original_audio
-      split: train
-    beat2_original_humanref_materialized:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1_by_dataset/beat2_original_humanref
+    omg_data_materialized_train:
+      _target_: omg.data.episode_cache.EpisodeCachedG1MotionDataset
+      root: ${paths.materialized_root}/omg_episode_cache_rot6d_seq60_hist10_k1
       split: train
   val:
     omg_data_materialized_val:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1
+      _target_: omg.data.episode_cache.EpisodeCachedG1MotionDataset
+      root: ${paths.materialized_root}/omg_episode_cache_rot6d_seq60_hist10_k1
       split: val
   test:
     omg_data_materialized_test:
-      _target_: omg.data.materialized.MaterializedG1MotionDataset
-      root: ${paths.materialized_root}/filtered_original_mixed_modalities_all_rot6d_seq60_hist10_k1
+      _target_: omg.data.episode_cache.EpisodeCachedG1MotionDataset
+      root: ${paths.materialized_root}/omg_episode_cache_rot6d_seq60_hist10_k1
       split: test
+
 loader_opts:
   train:
     batch_size: 96

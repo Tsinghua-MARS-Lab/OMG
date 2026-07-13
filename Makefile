@@ -5,7 +5,7 @@ TORCH_INDEX_URL ?= https://download.pytorch.org/whl/cu124
 PYPI_INDEX_URL ?=
 PIP_INDEX_ARGS := $(if $(PYPI_INDEX_URL),--index-url $(PYPI_INDEX_URL),)
 EXP ?= 100m
-DATA ?= omg_data
+DATA ?= omg_data_lerobot
 TRAINER ?= 1gpu
 
 .PHONY: venv install install-cn install-dev compile compose smoke test

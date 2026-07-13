@@ -1,0 +1,43 @@
+_target_: omg.data.datamodule.GenerationDataModule
+limit_each_trainset: null
+train_subset_ratio: null
+rotation_representation: ${representation.rotation_representation}
+
+dataset_opts:
+  train:
+    omg_lerobot_train: &dataset_defaults
+      _target_: omg.data.lerobot_dataset.LeRobotG1MotionDataset
+      dataset_root: ${paths.data_root}
+      repo_id: THU-MARS/OMG-Data
+      sequence_duration: 2.0
+      num_prev_states: ${representation.num_prev_states}
+      canonical_frame_idx: ${representation.canonical_frame_idx}
+      fps: 30.0
+      use_text: true
+      use_audio: false
+      audio_dim: 35
+      use_human_motion: false
+      human_motion_dim: 66
+      split: train
+  val:
+    omg_lerobot_val:
+      <<: *dataset_defaults
+      split: val
+  test:
+    omg_lerobot_test:
+      <<: *dataset_defaults
+      split: test
+
+loader_opts:
+  train:
+    batch_size: 96
+    num_workers: 0
+    prefetch_factor: null
+  val:
+    batch_size: 16
+    num_workers: 2
+    prefetch_factor: 1
+  test:
+    batch_size: 16
+    num_workers: 2
+    prefetch_factor: 1

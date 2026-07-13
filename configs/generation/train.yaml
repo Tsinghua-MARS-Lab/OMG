@@ -1,5 +1,5 @@
 defaults:
-  - data: omg_data
+  - data: omg_data_lerobot
   - representation: 125d
   - denoiser: transformer
   - diffusion: guided_x0

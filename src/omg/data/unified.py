@@ -63,6 +63,8 @@ class UnifiedG1MotionIndex:
         self._motion_files: dict[str, list[Path]] | None = None
         self._label_files: dict[str, list[Path]] | None = None
         self._text_files: dict[str, list[Path]] | None = None
+        self._label_relative_files: dict[str, Path] | None = None
+        self._text_relative_files: dict[str, Path] | None = None
         self._cache_file, self._cache_lock = self._cache_paths()
 
         cached = self._load_cache()
@@ -87,6 +89,16 @@ class UnifiedG1MotionIndex:
             files.setdefault(path.stem, []).append(path)
         return files
 
+    @staticmethod
+    def _index_relative_files(root: Path | None, suffix: str) -> dict[str, Path]:
+        if root is None or not root.exists():
+            return {}
+        files: dict[str, Path] = {}
+        for path in sorted(root.rglob(f"*{suffix}")):
+            key = path.relative_to(root).with_suffix("").as_posix()
+            files[key] = path
+        return files
+
     def _get_motion_files(self) -> dict[str, list[Path]]:
         if self._motion_files is None:
             self._motion_files = self._index_files(self.g1_root, ".npz") if self.recursive_search else {}
@@ -99,10 +111,24 @@ class UnifiedG1MotionIndex:
             )
         return self._label_files
 
+    def _get_label_relative_files(self) -> dict[str, Path]:
+        if self._label_relative_files is None:
+            self._label_relative_files = (
+                self._index_relative_files(self.labels_root, ".json") if self.recursive_search and self.labels_root else {}
+            )
+        return self._label_relative_files
+
     def _get_text_files(self) -> dict[str, list[Path]]:
         if self._text_files is None:
             self._text_files = self._index_files(self.text_root, ".txt") if self.recursive_search and self.text_root else {}
         return self._text_files
+
+    def _get_text_relative_files(self) -> dict[str, Path]:
+        if self._text_relative_files is None:
+            self._text_relative_files = (
+                self._index_relative_files(self.text_root, ".txt") if self.recursive_search and self.text_root else {}
+            )
+        return self._text_relative_files
 
     def _cache_paths(self) -> tuple[Path, Path]:
         cache_root = Path(os.environ.get("OMG_DATASET_CACHE_DIR") or os.environ.get("TMPDIR") or "/tmp")
@@ -164,7 +190,7 @@ class UnifiedG1MotionIndex:
             cached = self._load_cache()
             if cached is not None:
                 return cached
-            print(f"[INFO] UnifiedG1MotionIndex building cache split={self.split} path={self._cache_file}")
+            print(f"[INFO] UnifiedG1MotionIndex building cache split={self.split} path={self._cache_file}", flush=True)
             entries = self._build_entries()
             samples = self._build_samples(entries) if self.sample_by_segment else []
             self._write_cache(entries, samples)
@@ -265,13 +291,15 @@ class UnifiedG1MotionIndex:
             self._strip_retarget_suffix(str(entry_info["sequence_name"])),
         ]
         rel = Path(str(entry_info["entry"])).with_suffix("")
-        for root, suffix in ((self.labels_root, ".json"), (self.text_root, ".txt")):
-            if root is None:
-                continue
-            for stem in (rel, *(Path(stem) for stem in stems)):
-                candidate = root / stem.with_suffix(suffix)
-                if candidate.exists():
-                    return candidate
+        rel_keys = [rel.as_posix()]
+        stripped_name = self._strip_retarget_suffix(rel.name)
+        if stripped_name != rel.name:
+            rel_keys.append(Path(*rel.parts[:-1], stripped_name).as_posix())
+        for file_map in (self._get_label_relative_files(), self._get_text_relative_files()):
+            for key in rel_keys:
+                path = file_map.get(key)
+                if path is not None:
+                    return path
         label_files = self._get_label_files()
         text_files = self._get_text_files()
         for stem in stems:

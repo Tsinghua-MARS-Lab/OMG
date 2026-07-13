@@ -41,6 +41,7 @@ For a smaller install, choose extras by task:
 
 ```bash
 uv pip install -e ".[train]"
+uv pip install -e ".[data]"
 uv pip install -e ".[render]"
 uv pip install -e ".[tracking]"
 uv pip install -e ".[export]"

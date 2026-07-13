@@ -1,6 +1,7 @@
 __all__ = [
     "G1MotionDataset",
     "GenerationDataModule",
+    "LeRobotG1MotionDataset",
     "motion_collate_fn",
 ]
 
@@ -14,4 +15,8 @@ def __getattr__(name: str):
         from omg.data.g1_motion import G1MotionDataset
 
         return G1MotionDataset
+    if name == "LeRobotG1MotionDataset":
+        from omg.data.lerobot_dataset import LeRobotG1MotionDataset
+
+        return LeRobotG1MotionDataset
     raise AttributeError(name)

@@ -87,7 +87,10 @@ def _resolve_dataset_cfg(
     resolved = OmegaConf.to_container(root.dataset, resolve=True)
     if not isinstance(resolved, dict):
         raise ValueError("Resolved dataset config must be a mapping")
-    if resolved.get("_target_") == "omg.data.g1_motion.G1MotionDataset":
+    if resolved.get("_target_") in {
+        "omg.data.g1_motion.G1MotionDataset",
+        "omg.data.lerobot_dataset.LeRobotG1MotionDataset",
+    }:
         resolved.setdefault("rotation_representation", representation.get("rotation_representation", "quat"))
         if split == "train":
             resolved["train_window_policy"] = "exhaustive"
@@ -102,7 +105,7 @@ def _default_output_root(args: argparse.Namespace, representation: dict[str, Any
     rotation = str(representation.get("rotation_representation", "quat")).lower().replace("-", "")
     sequence_length = int(representation["sequence_length"])
     history = int(representation["num_prev_states"])
-    return materialized_root / f"filtered_original_mixed_modalities_all_{rotation}_seq{sequence_length}_hist{history}_k{int(args.train_window_stride)}"
+    return materialized_root / f"omg_data_{rotation}_seq{sequence_length}_hist{history}_k{int(args.train_window_stride)}"
 
 
 def _train_by_dataset_root(output_root: Path, requested: str | None) -> Path:
@@ -327,7 +330,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Materialize unified OMG source datasets into fixed-window NPZ shards.")
-    parser.add_argument("--data-config", type=Path, default=Path("configs/generation/data/omg_data.yaml"))
+    parser.add_argument("--data-config", type=Path, default=Path("configs/generation/data/omg_data_lerobot.yaml"))
     parser.add_argument("--representation-config", type=Path, default=Path("configs/generation/representation/125d.yaml"))
     parser.add_argument("--paths-config", type=Path, default=Path("configs/generation/paths/default.yaml"))
     parser.add_argument("--output-root", type=Path, default=None)

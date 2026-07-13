@@ -54,7 +54,21 @@ def test_materialized_dataset_returns_generation_sample(tmp_path):
         json.dumps([{"caption": "walk forward", "meta": {"sequence_name": "sample"}}]),
         encoding="utf-8",
     )
-    (split_root / "index.jsonl").write_text(json.dumps({"shard": "shard_00000.npz", "offset": 0}) + "\n", encoding="utf-8")
+    (split_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "format": "omg.materialized.g1_motion.v1",
+                "samples": 1,
+                "shards": 1,
+                "shard_size": 8192,
+                "tensor_keys": list(TENSOR_KEYS),
+                "mask_keys": list(MASK_KEYS),
+                "compressed": False,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     dataset = MaterializedG1MotionDataset(root=root, split="train")
     sample = dataset[0]
@@ -65,3 +79,6 @@ def test_materialized_dataset_returns_generation_sample(tmp_path):
     batch = motion_collate_fn([sample, sample])
     assert batch["motion_features"].shape == (2, 3, 125)
     assert batch["mask"]["valid"].tolist() == [[True, True, False], [True, True, False]]
+    stats_batch = next(dataset.iter_stats_batches(batch_size=8))
+    assert stats_batch["motion_features"].shape == (1, 3, 125)
+    assert stats_batch["valid_mask"].tolist() == [[True, True, False]]

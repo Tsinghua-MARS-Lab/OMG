@@ -14,15 +14,6 @@
   </p>
 </div>
 
-- [x] Training Code
-- [ ] Evaluation Pipelines
-  - [ ] Pretrained Evaluator Checkpoints
-  - [x] Benchmark Code
-- [x] Inference Code
-- [x] Sim-to-Real Deployment Code
-- [ ] OMG-Data
-- [ ] Pretrained Checkpoints
-
 ## Pipeline
 
 The usual end-to-end workflow is:
@@ -60,9 +51,10 @@ task-specific extras.
 
 ## 2. Download Data and Artifacts
 
-OMG-Data and pretrained OMG checkpoints will be released on Hugging Face:
+OMG-Data is released as an official LeRobotDataset v3 dataset. Model artifacts
+will also be released on Hugging Face:
 
-- [OMG-Data]() (coming soon)
+- [OMG-Data](https://huggingface.co/datasets/THU-MARS/OMG-Data)
 - [Materialized OMG-Data]() (coming soon)
 - [OMG checkpoints]() (coming soon)
 - [OMG evaluator]() (coming soon)
@@ -78,7 +70,8 @@ Recommended local layout:
 
 ```text
 data/OMG-Data/
-  omg_data/
+  data/
+  meta/
   materialized/
 models/
   generation/
@@ -99,16 +92,24 @@ export OMG_MODELS_ROOT=/path/to/OMG-models
 
 ## 3. Materialize Data
 
-Materialization precomputes fixed-window training shards. It is recommended for
-full training because it removes repeated source parsing and feature assembly
-from the training loop.
+Materialization precomputes frame-level episode kinematics. It is recommended
+for full training because it removes repeated source parsing and FK while
+preserving the exact exhaustive stride-1 window set without duplicating
+overlapping window tensors.
 
 
-You can download precomputed [materialized OMG-Data](https://huggingface.co/datasets/<org>/OMG-Data-Materialized) into `OMG_MATERIALIZED_ROOT`, or generate the
+You can download precomputed [materialized OMG-Data](https://huggingface.co/datasets/THU-MARS/OMG-Data-Materialized) into `OMG_MATERIALIZED_ROOT`, or generate the
 same layout locally from source OMG-Data:
 
 ```bash
 scripts/materialize_omg_data.sh --overwrite
+```
+
+Validate every manifest, episode index, and frame tensor before use:
+
+```bash
+PYTHONPATH=src python -m omg.cli.data.validate_episode_cache \
+  "$OMG_MATERIALIZED_ROOT/omg_episode_cache_rot6d_seq60_hist10_k1"
 ```
 
 Train with materialized data by using:
@@ -121,7 +122,7 @@ For small debugging runs or custom tiny datasets, source data can be used
 directly with:
 
 ```bash
-data=omg_data
+data=omg_data_lerobot
 ```
 
 ## 4. Compute Stats
@@ -133,11 +134,26 @@ config expects the generated stats file at:
 assets/stats/g1_125d_stats.json
 ```
 
+The materialized reader enumerates the same exhaustive windows as the source
+reader while reusing cached FK tensors.
+
 ```bash
 PYTHONPATH=src python -m omg.cli.generation.compute_stats \
-  --data-config configs/generation/data/omg_data.yaml \
+  --data-config configs/generation/data/omg_data_materialized.yaml \
   --representation-config configs/generation/representation/125d.yaml \
   --paths-config configs/generation/paths/default.yaml \
+  --device cuda \
+  --output assets/stats/g1_125d_stats.json
+```
+
+For four-GPU exact statistics, use the same command through torchrun:
+
+```bash
+torchrun --standalone --nproc-per-node=4 -m omg.cli.generation.compute_stats \
+  --data-config configs/generation/data/omg_data_materialized.yaml \
+  --representation-config configs/generation/representation/125d.yaml \
+  --paths-config configs/generation/paths/default.yaml \
+  --device cuda \
   --output assets/stats/g1_125d_stats.json
 ```
 
@@ -228,7 +244,7 @@ Prepare fixed benchmark sample manifests:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
-  --data omg_data \
+  --data omg_data_lerobot \
   --exp 50m \
   --output_dir outputs/benchmark_samples
 ```
