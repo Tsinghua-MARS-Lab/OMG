@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 import xml.etree.ElementTree as ET
 
-os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ.setdefault("MUJOCO_GL", "glfw" if platform.system() == "Darwin" else "egl")
 
 import cv2
 import mujoco

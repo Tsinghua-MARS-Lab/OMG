@@ -21,9 +21,15 @@ trainer:
   max_steps: 180000
   val_check_interval: 2000
   accumulate_grad_batches: 1
+  limit_val_batches: 200
 callbacks:
   checkpoint:
     every_n_train_steps: 2000
+  divergence_guard:
+    # The full objective contains weighted physical terms whose natural scale is
+    # configuration-dependent. Monitor the normalized diffusion objective while
+    # the independent gradient-norm guard covers unstable auxiliary gradients.
+    loss_monitor: diffusion_loss
 data:
   loader_opts:
     train:

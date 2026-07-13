@@ -187,13 +187,22 @@ class DistributedMaterializedShardSampler(Sampler[int]):
     """Distributed shard-local shuffle for materialized datasets.
 
     The materialized format stores many samples per large shard. Fully random
-    sample order causes every worker to repeatedly load unrelated shards. This
-    sampler still shuffles globally at the shard level and locally within each
-    shard, while keeping consecutive samples shard-local so a training batch can
-    reuse the loaded shard.
+    sample order causes every worker to repeatedly load unrelated shards, but
+    draining one shard at a time makes each rank see homogeneous batches when
+    shards are grouped by source dataset. This sampler shuffles shards globally,
+    keeps a bounded active shard window per rank, and emits small blocks in a
+    round-robin order across that window. A batch therefore mixes multiple
+    shards while each shard is still read in short local bursts.
     """
 
-    def __init__(self, dataset: Dataset, *, seed: int = 0) -> None:
+    def __init__(
+        self,
+        dataset: Dataset,
+        *,
+        seed: int = 0,
+        block_size: int = 8,
+        interleave_window: int = 64,
+    ) -> None:
         super().__init__()
         spans = _materialized_shard_spans(dataset)
         if not spans:
@@ -201,6 +210,8 @@ class DistributedMaterializedShardSampler(Sampler[int]):
         self.spans = spans
         self.num_samples = int(sum(count for _, count in spans))
         self.seed = int(seed)
+        self.block_size = max(1, int(block_size))
+        self.interleave_window = max(1, int(interleave_window))
         self.epoch = 0
 
     def _rank_span_indices(self) -> list[int]:
@@ -210,14 +221,33 @@ class DistributedMaterializedShardSampler(Sampler[int]):
         order = torch.randperm(len(self.spans), generator=generator).tolist()
         return [span_index for block_position, span_index in enumerate(order) if block_position % world_size == rank]
 
+    def _activate_span(self, span_index: int, generator: torch.Generator) -> list[Any]:
+        start, count = self.spans[span_index]
+        offsets = torch.randperm(count, generator=generator).tolist()
+        return [int(start), offsets, 0]
+
     def __iter__(self):
         generator = torch.Generator()
         generator.manual_seed(self.seed + self.epoch * 0x9E3779B1 + 0xD1B54A32)
-        for span_index in self._rank_span_indices():
-            start, count = self.spans[span_index]
-            offsets = torch.randperm(count, generator=generator).tolist()
-            for offset in offsets:
+        span_indices = self._rank_span_indices()
+        active: list[list[Any]] = []
+        next_span = 0
+
+        def fill_active() -> None:
+            nonlocal next_span
+            while next_span < len(span_indices) and len(active) < self.interleave_window:
+                active.append(self._activate_span(span_indices[next_span], generator))
+                next_span += 1
+
+        fill_active()
+        while active:
+            start, offsets, cursor = active.pop(0)
+            end = min(int(cursor) + self.block_size, len(offsets))
+            for offset in offsets[int(cursor) : end]:
                 yield start + int(offset)
+            if end < len(offsets):
+                active.append([start, offsets, end])
+            fill_active()
 
     def __len__(self) -> int:
         return int(sum(self.spans[span_index][1] for span_index in self._rank_span_indices()))

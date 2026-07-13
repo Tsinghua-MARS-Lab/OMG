@@ -5,8 +5,8 @@
 The public artifacts will be released on Hugging Face:
 
 ```text
-OMG-Data:              https://huggingface.co/datasets/<org>/OMG-Data
-Materialized OMG-Data: https://huggingface.co/datasets/<org>/OMG-Data-Materialized
+OMG-Data:              https://huggingface.co/datasets/THU-MARS/OMG-Data
+Materialized OMG-Data: https://huggingface.co/datasets/THU-MARS/OMG-Data-Materialized
 OMG checkpoints:       https://huggingface.co/<org>/OMG
 OMG evaluator:         https://huggingface.co/<org>/OMG-Evaluator
 ```
@@ -19,7 +19,8 @@ The portable default layout is:
 OMG/
   data/
     OMG-Data/
-      omg_data/
+      data/
+      meta/
       materialized/
   models/
     generation/
@@ -50,5 +51,5 @@ For evaluator-based benchmark metrics, prepare:
 
 - `models/evaluator/pretrained.ckpt`, downloaded from the OMG evaluator release.
 
-For training, prepare either source datasets under `omg_data/` or
-materialized fixed-window shards under `materialized/`.
+For training, prepare either the official LeRobot v3 dataset under `OMG-Data/`
+or frame-level episode kinematics caches under `materialized/`.

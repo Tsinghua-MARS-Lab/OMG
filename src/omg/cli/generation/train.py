@@ -42,13 +42,17 @@ def _prepare_argv_for_hydra() -> None:
     sys.argv = _quote_checkpoint_path_overrides(sys.argv)
 
 
-def _callbacks(cfg: DictConfig):
+def _callbacks(cfg: DictConfig, *, logger_enabled: bool):
     callbacks = []
     if "callbacks" not in cfg or cfg.callbacks is None:
         return callbacks
     for _, cb_cfg in cfg.callbacks.items():
         if cb_cfg is not None and "_target_" in cb_cfg:
-            callbacks.append(instantiate(cb_cfg))
+            resolved = OmegaConf.create(OmegaConf.to_container(cb_cfg, resolve=True))
+            requires_logger = bool(resolved.pop("requires_logger", False))
+            if requires_logger and not logger_enabled:
+                continue
+            callbacks.append(instantiate(resolved))
     return callbacks
 
 
@@ -188,7 +192,7 @@ def run(cfg: DictConfig) -> None:
     _log_stage("build_trainer_config", stage_start)
 
     stage_start = _log_stage("instantiate_callbacks")
-    callbacks = _callbacks(cfg)
+    callbacks = _callbacks(cfg, logger_enabled=logger is not False)
     Log.info("[TrainStage] instantiate_callbacks:classes=%s", [type(callback).__name__ for callback in callbacks])
     _log_stage("instantiate_callbacks", stage_start)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from omg.motion.representation import G1MotionRepresentation
+from omg.motion.feature_codec import G1MotionFeatureCodec
 from omg.robots.g1.kinematics import G1Kinematics
 
 
@@ -30,19 +30,20 @@ def test_forward_body_positions_matches_full_fk():
 
 
 def test_prev_state_features_accept_pos_only_fk():
-    representation = G1MotionRepresentation(num_prev_states=2)
+    kinematics = G1Kinematics()
+    codec = G1MotionFeatureCodec(kinematics, num_prev_states=2)
     qpos = _sample_qpos((4, 2))
-    fk = representation.kinematics.forward_kinematics(qpos)
-    fast_body_pos = representation.kinematics.forward_body_positions(qpos)
+    fk = kinematics.forward_kinematics(qpos)
+    fast_body_pos = kinematics.forward_body_positions(qpos)
     fps = torch.full((4,), 30.0)
 
-    baseline, baseline_root_pos, baseline_root_quat = representation.codec.prev_state_features_from_history(
+    baseline, baseline_root_pos, baseline_root_quat = codec.prev_state_features_from_history(
         qpos,
         fk["body_pos_w"],
         fk["body_quat_w"],
         fps=fps,
     )
-    fast, fast_root_pos, fast_root_quat = representation.codec.prev_state_features_from_history(
+    fast, fast_root_pos, fast_root_quat = codec.prev_state_features_from_history(
         qpos,
         fast_body_pos,
         None,

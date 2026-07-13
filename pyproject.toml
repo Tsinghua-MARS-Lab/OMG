@@ -33,6 +33,12 @@ render = [
   "mujoco>=3.7,<3.8",
   "opencv-python>=4.9",
 ]
+data = [
+  "datasets>=4,<5",
+  "huggingface-hub>=0.34,<1",
+  "pandas>=2.2,<2.4",
+  "pyarrow>=16,<22",
+]
 benchmark = [
   "transformers>=4.40,<5",
 ]
@@ -54,11 +60,15 @@ dev = [
   "pytest>=8.0",
 ]
 all = [
+  "datasets>=4,<5",
   "imageio>=2.34,<3",
+  "huggingface-hub>=0.34,<1",
   "matplotlib>=3.10,<3.11",
   "mujoco>=3.7,<3.8",
   "onnxruntime-gpu>=1.18,<2",
   "opencv-python>=4.9",
+  "pandas>=2.2,<2.4",
+  "pyarrow>=16,<22",
   "pytest>=8.0",
   "pyzmq>=26,<27",
   "tensorrt-cu12>=10.16,<10.17",

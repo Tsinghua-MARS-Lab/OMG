@@ -23,7 +23,7 @@ model.text_encoder.model_name=/path/to/t5-base
 CUDA_VISIBLE_DEVICES=0,1,2,3 \
 PYTHONPATH=src python -m omg.cli.generation.train \
   exp=50m \
-  data=omg_data \
+  data=omg_data_materialized \
   trainer=4gpu \
   logger=wandb \
   exp_name=50m_release_train
@@ -65,7 +65,7 @@ Use `ckpt_path` for a full Lightning resume:
 ```bash
 PYTHONPATH=src python -m omg.cli.generation.train \
   exp=50m \
-  data=omg_data \
+  data=omg_data_materialized \
   trainer=4gpu \
   logger=wandb \
   ckpt_path=outputs/50m_release_train/checkpoints/last.ckpt
@@ -77,7 +77,7 @@ resuming optimizer, scheduler, dataloader, or global step state:
 ```bash
 PYTHONPATH=src python -m omg.cli.generation.train \
   exp=50m \
-  data=omg_data \
+  data=omg_data_materialized \
   trainer=4gpu \
   logger=wandb \
   init_weights_only_ckpt=outputs/source/checkpoints/last.ckpt

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -12,7 +13,7 @@ from omg.runtime.onnx_providers import DEFAULT_TRACKER_ONNX_PROVIDERS_CSV
 
 def configure_mujoco_env() -> None:
     if "MUJOCO_GL" not in os.environ:
-        os.environ["MUJOCO_GL"] = "egl"
+        os.environ["MUJOCO_GL"] = "glfw" if platform.system() == "Darwin" else "egl"
     if os.environ.get("MUJOCO_GL") == "egl":
         os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
         os.environ.setdefault("EGL_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "0") or "0")
