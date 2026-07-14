@@ -14,6 +14,11 @@
   </p>
 </div>
 
+## News
+
+🚩 **Jul. 2026**: OMG won **ExWBC@RSS 2026 Oral, RoboData@RSS 2026 Spotlight**, congrats!<br>
+🚩 **Jun. 2026**: We release preprint, code and data for [OMG](https://arxiv.org/abs/2606.10340).
+
 ## Pipeline
 
 The usual end-to-end workflow is:
@@ -294,3 +299,15 @@ See [Realtime G1 Deployment](docs/realtime_g1.md) for the full launch sequence.
 ## License
 
 This project is released under the [MIT License](LICENSE).
+
+## Citation
+
+If you find our code useful, please consider citing our work:
+```
+@article{huang2026omg,
+  title={OMG: Omni-Modal Motion Generation for Generalist Humanoid Control},
+  author={Huang, Siqiao and Lee, Kun-Ying and Qiao, Dongming and He, Guanqi and Wang, Zhenyu and Li, Yitang and Zhu, Shaoting and Zhao, Hang},
+  journal={arXiv preprint arXiv:2606.10340},
+  year={2026}
+}
+```
