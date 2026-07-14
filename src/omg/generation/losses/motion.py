@@ -15,11 +15,20 @@ from omg.utils.rotation_conversions import (
 )
 
 
-def _masked_sum_batch_mean(value: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+def _masked_element_mean(value: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Average every valid scalar while keeping samples equally weighted.
+
+    Motion terms have different event shapes: root positions contain three
+    coordinates, joint losses contain one value per joint, and FK losses add a
+    body dimension.  Counting only valid frames makes those trailing dimensions
+    implicit multipliers on the objective.  That is inconsistent with the
+    diffusion objective, which averages its feature dimension explicitly.
+    """
     mask = mask.to(device=value.device, dtype=value.dtype)
-    denominator = mask.flatten(1).sum(dim=1)
     while mask.ndim < value.ndim:
         mask = mask.unsqueeze(-1)
+    mask = mask.expand_as(value)
+    denominator = mask.flatten(1).sum(dim=1)
     per_sample = (value * mask).flatten(1).sum(dim=1) / denominator.clamp_min(1.0)
     has_values = denominator > 0
     if not has_values.any():
@@ -164,10 +173,10 @@ class MotionLoss(nn.Module):
         gt = representation.codec.split_features(target_features.to(pred_features.device))
         zero = pred_features.new_zeros(())
         terms = {
-            "simple_root_pos_loss": _masked_sum_batch_mean((pred.root_pos_local - gt.root_pos_local).pow(2), valid),
-            "simple_root_rot_loss": _masked_sum_batch_mean(_quat_geodesic_sq(pred.root_rot_local_quat, gt.root_rot_local_quat), valid),
-            "simple_joint_dof_loss": _masked_sum_batch_mean((pred.joint_dof - gt.joint_dof).pow(2), valid),
-            "simple_body_pos_loss": _masked_sum_batch_mean((pred.body_link_pos_local - gt.body_link_pos_local).pow(2), valid[:, :, None]),
+            "simple_root_pos_loss": _masked_element_mean((pred.root_pos_local - gt.root_pos_local).pow(2), valid),
+            "simple_root_rot_loss": _masked_element_mean(_quat_geodesic_sq(pred.root_rot_local_quat, gt.root_rot_local_quat), valid),
+            "simple_joint_dof_loss": _masked_element_mean((pred.joint_dof - gt.joint_dof).pow(2), valid),
+            "simple_body_pos_loss": _masked_element_mean((pred.body_link_pos_local - gt.body_link_pos_local).pow(2), valid[:, :, None]),
             "body_pos_consistency_loss": zero,
             "vel_root_pos_loss": zero,
             "vel_root_rot_loss": zero,
@@ -186,15 +195,15 @@ class MotionLoss(nn.Module):
 
         if pred_features.shape[1] > 1:
             pair_mask = valid[:, 1:] & valid[:, :-1]
-            terms["vel_root_pos_loss"] = _masked_sum_batch_mean(
+            terms["vel_root_pos_loss"] = _masked_element_mean(
                 (torch.diff(pred.root_pos_local, dim=1) - torch.diff(gt.root_pos_local, dim=1)).pow(2),
                 pair_mask,
             )
-            terms["vel_root_rot_loss"] = _masked_sum_batch_mean(
+            terms["vel_root_rot_loss"] = _masked_element_mean(
                 (_quat_velocity(pred.root_rot_local_quat, fps) - _quat_velocity(gt.root_rot_local_quat, fps)).pow(2),
                 pair_mask,
             )
-            terms["vel_joint_dof_loss"] = _masked_sum_batch_mean(
+            terms["vel_joint_dof_loss"] = _masked_element_mean(
                 (torch.diff(pred.joint_dof, dim=1) - torch.diff(gt.joint_dof, dim=1)).pow(2),
                 pair_mask,
             )
@@ -216,11 +225,11 @@ class MotionLoss(nn.Module):
         pred_fk_local = None
         if needs_fk:
             pred_qpos, pred_fk, pred_fk_local = self._decode_fk(pred, batch, representation, valid)
-            terms["body_pos_consistency_loss"] = _masked_sum_batch_mean(
+            terms["body_pos_consistency_loss"] = _masked_element_mean(
                 (pred.body_link_pos_local - pred_fk_local.body_link_pos_local).pow(2),
                 valid[:, :, None],
             )
-            terms["fk_body_pos_loss"] = _masked_sum_batch_mean(
+            terms["fk_body_pos_loss"] = _masked_element_mean(
                 (pred_fk_local.body_link_pos_local - gt.body_link_pos_local).pow(2),
                 valid[:, :, None],
             )
@@ -234,14 +243,14 @@ class MotionLoss(nn.Module):
                     pred_fk["body_quat_w"],
                     batch["canon_root_quat"].to(pred_features.device),
                 )
-                terms["fk_body_rot_loss"] = _masked_sum_batch_mean(
+                terms["fk_body_rot_loss"] = _masked_element_mean(
                     _rotation_geodesic_sq(pred_body_rot_local, gt_body_rot_local),
                     valid[:, :, None],
                 )
 
             if pred_features.shape[1] > 1:
                 pair_mask = valid[:, 1:] & valid[:, :-1]
-                terms["body_vel_loss"] = _masked_sum_batch_mean(
+                terms["body_vel_loss"] = _masked_element_mean(
                     (torch.diff(pred_fk_local.body_link_pos_local, dim=1) - torch.diff(gt.body_link_pos_local, dim=1)).pow(2),
                     pair_mask[:, :, None],
                 )
@@ -251,7 +260,7 @@ class MotionLoss(nn.Module):
                 pred_fk["body_quat_w"],
             )
             sole_bottom = sole_points[..., 2] - sole_radii.view(1, 1, -1)
-            terms["terrain_penetration_loss"] = _masked_sum_batch_mean(torch.relu(-sole_bottom).pow(2), valid[:, :, None])
+            terms["terrain_penetration_loss"] = _masked_element_mean(torch.relu(-sole_bottom).pow(2), valid[:, :, None])
             if "body_pos_w" in batch and "body_quat_w" in batch:
                 gt_sole, gt_radii = representation.kinematics.get_sole_proxy_points(
                     batch["body_pos_w"].to(pred_features.device),
@@ -266,10 +275,10 @@ class MotionLoss(nn.Module):
                     & (gt_bottom <= self.contact_height_threshold)
                     & (gt_vel.norm(dim=-1) <= self.contact_velocity_threshold)
                 )
-                terms["contact_height_loss"] = _masked_sum_batch_mean(sole_bottom.pow(2), contact_mask)
+                terms["contact_height_loss"] = _masked_element_mean(sole_bottom.pow(2), contact_mask)
                 if pred_features.shape[1] > 1:
                     pred_vel = torch.diff(sole_points[..., :2], dim=1) * fps.view(-1, 1, 1, 1)
-                    terms["contact_velocity_loss"] = _masked_sum_batch_mean(
+                    terms["contact_velocity_loss"] = _masked_element_mean(
                         pred_vel.pow(2).sum(dim=-1),
                         contact_mask[:, 1:] & contact_mask[:, :-1],
                     )
@@ -278,19 +287,19 @@ class MotionLoss(nn.Module):
         if history is not None:
             prev = representation.codec.split_features(history.to(pred_features.device)[:, -1])
             first_valid = valid[:, :1]
-            terms["seam_root_pos_loss"] = _masked_sum_batch_mean(
+            terms["seam_root_pos_loss"] = _masked_element_mean(
                 (pred.root_pos_local[:, :1] - prev.root_pos_local[:, None]).pow(2),
                 first_valid,
             )
-            terms["seam_root_rot_loss"] = _masked_sum_batch_mean(
+            terms["seam_root_rot_loss"] = _masked_element_mean(
                 _quat_geodesic_sq(pred.root_rot_local_quat[:, :1], prev.root_rot_local_quat[:, None]),
                 first_valid,
             )
-            terms["seam_joint_dof_loss"] = _masked_sum_batch_mean(
+            terms["seam_joint_dof_loss"] = _masked_element_mean(
                 (pred.joint_dof[:, :1] - prev.joint_dof[:, None]).pow(2),
                 first_valid,
             )
-            terms["seam_body_pos_loss"] = _masked_sum_batch_mean(
+            terms["seam_body_pos_loss"] = _masked_element_mean(
                 (pred.body_link_pos_local[:, :1] - prev.body_link_pos_local[:, None]).pow(2),
                 first_valid[:, :, None],
             )
