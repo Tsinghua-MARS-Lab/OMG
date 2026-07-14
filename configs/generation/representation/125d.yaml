@@ -6,3 +6,4 @@ canonical_frame_idx: 9
 feat_dim: 125
 sequence_length: 60
 rotation_representation: rot6d
+rot6d_gradient_mode: canonical

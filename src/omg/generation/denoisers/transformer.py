@@ -189,6 +189,77 @@ class LocalTemporalCrossAttention(nn.Module):
         return h
 
 
+def _qk_normalized_cross_attention(
+    attention: nn.Module,
+    query: torch.Tensor,
+    context: torch.Tensor,
+    context_key_padding_mask: torch.Tensor | None,
+) -> torch.Tensor:
+    """Cross-attend with per-head query/key directions instead of magnitudes.
+
+    QK normalization removes the otherwise unidentifiable radial degree of
+    freedom in query and key projections.  Scaling either projection therefore
+    cannot sharpen the logits or amplify the input Jacobian.  Multiplying unit
+    vectors by ``sqrt(head_dim)`` preserves the variance of standard scaled
+    dot-product attention at initialization.
+    """
+    if hasattr(attention, "_qkv_same_embed_dim") and not attention._qkv_same_embed_dim:
+        raise ValueError("QK-normalized cross-attention requires equal query/key/value dimensions")
+
+    embed_dim = attention.embed_dim
+    num_heads = attention.num_heads
+    head_dim = embed_dim // num_heads
+    if hasattr(attention, "q_proj"):
+        q = attention.q_proj(query)
+        k = attention.k_proj(context)
+        v = attention.v_proj(context)
+    else:
+        if attention.in_proj_weight is None:
+            raise ValueError("QK-normalized cross-attention requires packed projection weights")
+        weight_q, weight_k, weight_v = attention.in_proj_weight.chunk(3, dim=0)
+        if attention.in_proj_bias is None:
+            bias_q = bias_k = bias_v = None
+        else:
+            bias_q, bias_k, bias_v = attention.in_proj_bias.chunk(3, dim=0)
+        q = F.linear(query, weight_q, bias_q)
+        k = F.linear(context, weight_k, bias_k)
+        v = F.linear(context, weight_v, bias_v)
+    batch_size, query_len, _ = q.shape
+    context_len = k.shape[1]
+    q = q.view(batch_size, query_len, num_heads, head_dim).transpose(1, 2)
+    k = k.view(batch_size, context_len, num_heads, head_dim).transpose(1, 2)
+    v = v.view(batch_size, context_len, num_heads, head_dim).transpose(1, 2)
+
+    head_scale = math.sqrt(head_dim)
+    q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+    k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
+
+    attn_mask = None
+    if context_key_padding_mask is not None:
+        attn_mask = torch.zeros(
+            batch_size,
+            1,
+            1,
+            context_len,
+            device=q.device,
+            dtype=q.dtype,
+        )
+        attn_mask = attn_mask.masked_fill(
+            context_key_padding_mask[:, None, None, :].bool(),
+            torch.finfo(q.dtype).min,
+        )
+    h = F.scaled_dot_product_attention(
+        q,
+        k,
+        v,
+        attn_mask=attn_mask,
+        dropout_p=float(getattr(attention, "dropout", 0.0)) if attention.training else 0.0,
+        is_causal=False,
+    )
+    h = h.transpose(1, 2).reshape(batch_size, query_len, embed_dim)
+    return attention.out_proj(h)
+
+
 class RotaryTransformerEncoderLayer(nn.Module):
     def __init__(self, hidden_dim: int, num_heads: int, dropout: float = 0.1, rope_base: float = 10000.0):
         super().__init__()
@@ -426,12 +497,11 @@ class MotionTransformerBlock(nn.Module):
     ) -> torch.Tensor:
         context_key_padding = ~context_mask.bool()
         h = self.norm_cross(x)
-        cross, _ = self.cross_attn(
+        cross = _qk_normalized_cross_attention(
+            self.cross_attn,
             query=h,
-            key=context,
-            value=context,
-            key_padding_mask=context_key_padding,
-            need_weights=False,
+            context=context,
+            context_key_padding_mask=context_key_padding,
         )
         x = x + self.dropout(cross)
         h = self.norm_self(x)

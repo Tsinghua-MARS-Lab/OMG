@@ -73,6 +73,9 @@ class TensorRTFriendlyMultiheadAttention(nn.Module):
         q = self.q_proj(query).reshape(batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
         k = self.k_proj(key).reshape(batch_size, key_len, self.num_heads, self.head_dim).transpose(1, 2)
         v = self.v_proj(value).reshape(batch_size, key_len, self.num_heads, self.head_dim).transpose(1, 2)
+        head_scale = float(self.head_dim) ** 0.5
+        q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+        k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
 
         attn_mask = None
         if key_padding_mask is not None:
