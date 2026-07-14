@@ -10,7 +10,6 @@ from omg.generation.metrics import physical_motion_metrics
 from omg.utils.rotation_conversions import (
     quaternion_invert,
     quaternion_multiply,
-    quaternion_to_axis_angle,
     quaternion_to_matrix,
 )
 
@@ -36,29 +35,22 @@ def _masked_element_mean(value: torch.Tensor, mask: torch.Tensor) -> torch.Tenso
     return per_sample[has_values].mean()
 
 
-
-def _quat_geodesic_sq(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def _quat_chordal_sq(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     pred = F.normalize(pred, dim=-1)
     target = F.normalize(target, dim=-1)
     pred_matrix = quaternion_to_matrix(pred)
     target_matrix = quaternion_to_matrix(target)
-    return _rotation_geodesic_sq(pred_matrix, target_matrix)
+    return _rotation_chordal_sq(pred_matrix, target_matrix)
 
 
-def _rotation_geodesic_sq(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    relative = pred.transpose(-1, -2) @ target
-    trace = relative.diagonal(offset=0, dim1=-2, dim2=-1).sum(dim=-1)
-    cos = ((trace - 1.0) * 0.5).clamp(-1.0 + 1e-6, 1.0 - 1e-6)
-    return torch.acos(cos).pow(2)
+def _rotation_chordal_sq(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Smooth SO(3) distance with the same local quadratic as angle squared."""
+    return 0.5 * (pred - target).square().sum(dim=(-2, -1))
 
 
-def _quat_velocity(quat: torch.Tensor, fps: torch.Tensor) -> torch.Tensor:
+def _quat_relative_rotation(quat: torch.Tensor) -> torch.Tensor:
     delta = quaternion_multiply(quat[:, 1:], quaternion_invert(quat[:, :-1]))
-    axis_angle = quaternion_to_axis_angle(delta)
-    while fps.ndim < axis_angle.ndim:
-        fps = fps.unsqueeze(-1)
-    return axis_angle * fps
-
+    return quaternion_to_matrix(F.normalize(delta, dim=-1))
 
 
 class MotionLoss(nn.Module):
@@ -174,7 +166,7 @@ class MotionLoss(nn.Module):
         zero = pred_features.new_zeros(())
         terms = {
             "simple_root_pos_loss": _masked_element_mean((pred.root_pos_local - gt.root_pos_local).pow(2), valid),
-            "simple_root_rot_loss": _masked_element_mean(_quat_geodesic_sq(pred.root_rot_local_quat, gt.root_rot_local_quat), valid),
+            "simple_root_rot_loss": _masked_element_mean(_quat_chordal_sq(pred.root_rot_local_quat, gt.root_rot_local_quat), valid),
             "simple_joint_dof_loss": _masked_element_mean((pred.joint_dof - gt.joint_dof).pow(2), valid),
             "simple_body_pos_loss": _masked_element_mean((pred.body_link_pos_local - gt.body_link_pos_local).pow(2), valid[:, :, None]),
             "body_pos_consistency_loss": zero,
@@ -199,10 +191,10 @@ class MotionLoss(nn.Module):
                 (torch.diff(pred.root_pos_local, dim=1) - torch.diff(gt.root_pos_local, dim=1)).pow(2),
                 pair_mask,
             )
-            terms["vel_root_rot_loss"] = _masked_element_mean(
-                (_quat_velocity(pred.root_rot_local_quat, fps) - _quat_velocity(gt.root_rot_local_quat, fps)).pow(2),
-                pair_mask,
-            )
+            pred_delta = _quat_relative_rotation(pred.root_rot_local_quat)
+            gt_delta = _quat_relative_rotation(gt.root_rot_local_quat)
+            angular_rate_sq = _rotation_chordal_sq(pred_delta, gt_delta) * fps[:, None].square() / 3.0
+            terms["vel_root_rot_loss"] = _masked_element_mean(angular_rate_sq, pair_mask)
             terms["vel_joint_dof_loss"] = _masked_element_mean(
                 (torch.diff(pred.joint_dof, dim=1) - torch.diff(gt.joint_dof, dim=1)).pow(2),
                 pair_mask,
@@ -244,7 +236,7 @@ class MotionLoss(nn.Module):
                     batch["canon_root_quat"].to(pred_features.device),
                 )
                 terms["fk_body_rot_loss"] = _masked_element_mean(
-                    _rotation_geodesic_sq(pred_body_rot_local, gt_body_rot_local),
+                    _rotation_chordal_sq(pred_body_rot_local, gt_body_rot_local),
                     valid[:, :, None],
                 )
 
@@ -292,7 +284,7 @@ class MotionLoss(nn.Module):
                 first_valid,
             )
             terms["seam_root_rot_loss"] = _masked_element_mean(
-                _quat_geodesic_sq(pred.root_rot_local_quat[:, :1], prev.root_rot_local_quat[:, None]),
+                _quat_chordal_sq(pred.root_rot_local_quat[:, :1], prev.root_rot_local_quat[:, None]),
                 first_valid,
             )
             terms["seam_joint_dof_loss"] = _masked_element_mean(

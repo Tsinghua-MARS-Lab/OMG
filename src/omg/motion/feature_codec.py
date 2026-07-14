@@ -15,6 +15,7 @@ from omg.utils.rotation_conversions import (
     quaternion_multiply,
     quaternion_to_matrix,
     rotation_6d_to_matrix,
+    rotation_6d_to_matrix_canonical_gradient,
     standardize_quaternion,
 )
 
@@ -34,6 +35,7 @@ class G1MotionFeatureCodec:
         num_prev_states: int = 2,
         canonical_frame_idx: int | None = None,
         rotation_representation: str = "quat",
+        rot6d_gradient_mode: str = "vanilla",
     ):
         self.kinematics = kinematics
         self.num_prev_states = int(num_prev_states)
@@ -46,6 +48,7 @@ class G1MotionFeatureCodec:
             )
         self.num_body_links = self.kinematics.num_bodies - 1
         self.rotation_representation = self._normalize_rotation_representation(rotation_representation)
+        self.rot6d_gradient_mode = self._normalize_rot6d_gradient_mode(rot6d_gradient_mode)
         self.root_rot_dim = {"quat": 4, "rot6d": 6}[self.rotation_representation]
         self.feature_dim = 3 + self.root_rot_dim + self.kinematics.num_joints + self.num_body_links * 3
         joint_start = 3 + self.root_rot_dim
@@ -73,6 +76,23 @@ class G1MotionFeatureCodec:
         }
         if key not in aliases:
             raise ValueError(f"Unsupported rotation_representation={value!r}; expected quat or rot6d")
+        return aliases[key]
+
+    @staticmethod
+    def _normalize_rot6d_gradient_mode(value: str) -> str:
+        key = str(value).strip().lower().replace("-", "_")
+        aliases = {
+            "vanilla": "vanilla",
+            "autograd": "vanilla",
+            "gram_schmidt": "vanilla",
+            "canonical": "canonical",
+            "canonical_gradient": "canonical",
+            "canonical_section": "canonical",
+        }
+        if key not in aliases:
+            raise ValueError(
+                f"Unsupported rot6d_gradient_mode={value!r}; expected vanilla or canonical"
+            )
         return aliases[key]
 
     def _standardize_quat(self, quat: torch.Tensor) -> torch.Tensor:
@@ -117,7 +137,11 @@ class G1MotionFeatureCodec:
         if self.rotation_representation == "quat":
             return self._standardize_quat(features)
         if self.rotation_representation == "rot6d":
-            return self._standardize_quat(matrix_to_quaternion(rotation_6d_to_matrix(features)))
+            if self.rot6d_gradient_mode == "canonical":
+                rotation = rotation_6d_to_matrix_canonical_gradient(features)
+            else:
+                rotation = rotation_6d_to_matrix(features)
+            return self._standardize_quat(matrix_to_quaternion(rotation))
         raise AssertionError(f"Unhandled rotation_representation={self.rotation_representation}")
 
     def assemble_features(self, components: MotionComponents) -> torch.Tensor:

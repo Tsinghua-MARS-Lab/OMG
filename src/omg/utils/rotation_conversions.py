@@ -528,6 +528,70 @@ def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
     return torch.stack((b1, b2, b3), dim=-2)
 
 
+class _Rotation6DToMatrixCanonicalGradient(torch.autograd.Function):
+    """Evaluate the 6D pullback at the canonical inverse image of SO(3)."""
+
+    @staticmethod
+    def forward(ctx, d6: torch.Tensor) -> torch.Tensor:
+        rotation = rotation_6d_to_matrix(d6)
+        ctx.save_for_backward(rotation)
+        ctx.input_dtype = d6.dtype
+        return rotation
+
+    @staticmethod
+    def backward(ctx, grad_rotation: torch.Tensor):
+        (rotation,) = ctx.saved_tensors
+        work_dtype = (
+            torch.float32
+            if ctx.input_dtype in (torch.float16, torch.bfloat16)
+            else ctx.input_dtype
+        )
+        # Every non-degenerate 6D vector in the same Gram--Schmidt inverse
+        # image denotes the same rotation.  Pulling the gradient back at the
+        # canonical first-two-row representative removes raw scale and
+        # collinearity from the Jacobian while retaining a linear VJP.
+        rotation_work = rotation.to(dtype=work_dtype)
+        grad_work = grad_rotation.to(dtype=work_dtype)
+        first = rotation_work[..., 0, :]
+        second = rotation_work[..., 1, :]
+        grad_first = grad_work[..., 0, :] + torch.cross(
+            second, grad_work[..., 2, :], dim=-1
+        )
+        grad_second = grad_work[..., 1, :] + torch.cross(
+            grad_work[..., 2, :], first, dim=-1
+        )
+
+        # Exact Gram--Schmidt VJP at two orthonormal input rows.  Writing it
+        # explicitly avoids opening a nested autograd graph in every backward.
+        grad_second_projected = grad_second - (
+            grad_second * second
+        ).sum(dim=-1, keepdim=True) * second
+        first_coupling = (
+            grad_second_projected * first
+        ).sum(dim=-1, keepdim=True)
+        input_second_grad = grad_second_projected - first_coupling * first
+        first_total = grad_first - first_coupling * second
+        input_first_grad = first_total - (
+            first_total * first
+        ).sum(dim=-1, keepdim=True) * first
+        gradient = torch.cat((input_first_grad, input_second_grad), dim=-1)
+        return gradient.to(dtype=ctx.input_dtype)
+
+
+def rotation_6d_to_matrix_canonical_gradient(d6: torch.Tensor) -> torch.Tensor:
+    """Use a well-conditioned canonical-section VJP for the Zhou 6D map.
+
+    The forward projection is unchanged.  In backward, the exact
+    Gram--Schmidt VJP is evaluated at the canonical orthonormal member of the
+    input's inverse image.  This keeps the pullback bounded near degenerate raw
+    6D vectors and, unlike a finite projective goal step, remains linear in the
+    upstream gradient so ordinary loss weights and reductions are preserved.
+    """
+    if d6.shape[-1] != 6:
+        raise ValueError(f"Expected 6D rotation input, got shape {tuple(d6.shape)}")
+    return _Rotation6DToMatrixCanonicalGradient.apply(d6)
+
+
 def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
     """
     Converts rotation matrices to 6D rotation representation by Zhou et al. [1]

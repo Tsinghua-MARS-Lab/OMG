@@ -30,6 +30,7 @@ class G1MotionRepresentation(nn.Module):
         sequence_length: int = 64,
         clip_std_min: float = 1e-6,
         rotation_representation: str = "quat",
+        rot6d_gradient_mode: str = "vanilla",
     ):
         super().__init__()
         self.feat_dim = feat_dim
@@ -40,9 +41,11 @@ class G1MotionRepresentation(nn.Module):
             num_prev_states=num_prev_states,
             canonical_frame_idx=canonical_frame_idx,
             rotation_representation=rotation_representation,
+            rot6d_gradient_mode=rot6d_gradient_mode,
         )
         self.num_prev_states = num_prev_states
         self.rotation_representation = self.codec.rotation_representation
+        self.rot6d_gradient_mode = self.codec.rot6d_gradient_mode
         self.canonical_frame_idx = self.codec.canonical_frame_idx
         self.sequence_length = int(sequence_length)
         self.is_motion_representation = True
