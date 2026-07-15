@@ -86,6 +86,10 @@ class RotarySelfAttention(nn.Module):
         v = v.transpose(1, 2)
         q, k = self.rope.apply(q, k)
 
+        head_scale = math.sqrt(self.head_dim)
+        q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+        k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
+
         attn_mask = None
         if key_padding_mask is not None:
             attn_mask = torch.zeros(
