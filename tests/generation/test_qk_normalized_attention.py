@@ -2,6 +2,7 @@ import torch
 
 from omg.generation.denoisers.transformer import (
     MotionTransformerBlock,
+    RotarySelfAttention,
     _qk_normalized_cross_attention,
 )
 
@@ -42,3 +43,34 @@ def test_qk_normalized_cross_attention_input_gradient_is_scale_invariant():
     _attention_output(block, scaled_query, context).square().mean().backward()
 
     torch.testing.assert_close(scaled_query.grad, expected, atol=2e-7, rtol=2e-5)
+
+
+def test_qk_normalized_rotary_self_attention_is_invariant_to_projection_scale():
+    torch.manual_seed(13)
+    attention = RotarySelfAttention(hidden_dim=32, num_heads=4, dropout=0.0).eval()
+    inputs = torch.randn(2, 5, 32)
+    expected = attention(inputs)
+
+    with torch.no_grad():
+        attention.qkv.weight[:64].mul_(19.0)
+        attention.qkv.bias[:64].mul_(19.0)
+    actual = attention(inputs)
+
+    torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
+
+
+def test_qk_normalized_rotary_self_attention_input_gradient_is_scale_invariant():
+    torch.manual_seed(17)
+    attention = RotarySelfAttention(hidden_dim=32, num_heads=4, dropout=0.0).eval()
+    inputs = torch.randn(2, 5, 32, requires_grad=True)
+    attention(inputs).square().mean().backward()
+    expected = inputs.grad.clone()
+
+    attention.zero_grad(set_to_none=True)
+    with torch.no_grad():
+        attention.qkv.weight[:64].mul_(23.0)
+        attention.qkv.bias[:64].mul_(23.0)
+    scaled_inputs = inputs.detach().clone().requires_grad_(True)
+    attention(scaled_inputs).square().mean().backward()
+
+    torch.testing.assert_close(scaled_inputs.grad, expected, atol=2e-7, rtol=2e-5)

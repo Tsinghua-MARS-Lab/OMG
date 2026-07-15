@@ -135,6 +135,9 @@ class TensorRTFriendlyRotarySelfAttention(nn.Module):
         sin = self.sin[:, :, :seq_len, :].to(dtype=q.dtype)
         q = (q * cos) + (_rotate_half_export(q) * sin)
         k = (k * cos) + (_rotate_half_export(k) * sin)
+        head_scale = float(self.head_dim) ** 0.5
+        q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+        k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
 
         attn_mask = None
         if key_padding_mask is not None:
