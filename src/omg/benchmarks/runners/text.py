@@ -84,38 +84,59 @@ def _select_sample_records(
     if require_min_two and num_samples < 2:
         raise ValueError("--num-texts must be at least 2 for FID/KID/diversity")
     names = list(datasets.keys())
-    candidates: list[tuple[str, int, int]] = []
+    candidate_spans: list[tuple[str, int, int, int]] = []
     global_index = 0
     per_dataset_counts = {}
-    print("[INFO] Scanning datasets for caption-bearing samples…")
+    print("[INFO] Indexing caption-bearing samples…")
     for name in names:
         dataset = datasets[name]
         count = 0
-        for index in tqdm(
-            range(len(dataset)),
-            desc=f"Captions {name}",
-            unit="idx",
-            leave=False,
-        ):
-            if _has_caption(dataset, index):
-                candidates.append((name, index, global_index))
-                count += 1
-            global_index += 1
+        captions = getattr(dataset, "captions", None)
+        window_offsets = getattr(dataset, "window_offsets", None)
+        if captions is not None and window_offsets is not None and len(window_offsets) == len(captions) + 1:
+            for episode_index, caption in enumerate(captions):
+                if not str(caption).strip():
+                    continue
+                start = int(window_offsets[episode_index])
+                end = min(int(window_offsets[episode_index + 1]), len(dataset))
+                if end <= start:
+                    continue
+                span_count = end - start
+                candidate_spans.append((name, start, global_index + start, span_count))
+                count += span_count
+        else:
+            for index in tqdm(
+                range(len(dataset)),
+                desc=f"Captions {name}",
+                unit="idx",
+                leave=False,
+            ):
+                if _has_caption(dataset, index):
+                    candidate_spans.append((name, index, global_index + index, 1))
+                    count += 1
+        global_index += len(dataset)
         per_dataset_counts[name] = count
-    if not candidates:
+    if not candidate_spans:
         raise ValueError("No caption-bearing samples found in selected datasets")
-    if int(num_samples) > len(candidates):
+    candidate_count = sum(span[3] for span in candidate_spans)
+    if int(num_samples) > candidate_count:
         print(
-            f"[WARN] Requested {num_samples} texts but only found {len(candidates)} caption-bearing samples; "
+            f"[WARN] Requested {num_samples} texts but only found {candidate_count} caption-bearing samples; "
             "evaluating all available samples."
         )
-        num_samples = len(candidates)
+        num_samples = candidate_count
     rng = np.random.default_rng(int(seed))
-    selected = np.sort(rng.choice(len(candidates), size=int(num_samples), replace=False))
+    selected = np.sort(rng.choice(candidate_count, size=int(num_samples), replace=False))
+    span_ends = np.cumsum(np.asarray([span[3] for span in candidate_spans], dtype=np.int64))
+    selected_spans = np.searchsorted(span_ends, selected, side="right")
     records: list[SampleRecord] = []
     selected_counts: dict[str, int] = {}
-    for candidate_index in selected:
-        dataset_name, index, candidate_global = candidates[int(candidate_index)]
+    for candidate_index, span_index in zip(selected, selected_spans, strict=True):
+        dataset_name, span_start, span_global_start, _ = candidate_spans[int(span_index)]
+        previous_end = 0 if int(span_index) == 0 else int(span_ends[int(span_index) - 1])
+        offset = int(candidate_index) - previous_end
+        index = span_start + offset
+        candidate_global = span_global_start + offset
         selected_counts[dataset_name] = selected_counts.get(dataset_name, 0) + 1
         records.append(SampleRecord(dataset=dataset_name, index=index, global_index=candidate_global))
     print(f"[INFO] caption-bearing samples by dataset: {per_dataset_counts}")

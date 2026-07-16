@@ -38,6 +38,24 @@ class DummyDataset:
         return {"caption": f"{self.prefix}-{index}", "meta": {"index": index}}
 
 
+class DummyEpisodeWindowDataset:
+    def __init__(self, captions: list[str], window_counts: list[int]):
+        assert len(captions) == len(window_counts)
+        self.captions = captions
+        self.window_offsets = np.concatenate(
+            [np.zeros(1, dtype=np.int64), np.cumsum(window_counts, dtype=np.int64)]
+        )
+        self.getitem_calls = 0
+
+    def __len__(self):
+        return int(self.window_offsets[-1])
+
+    def __getitem__(self, index: int):
+        self.getitem_calls += 1
+        episode = int(np.searchsorted(self.window_offsets, index, side="right") - 1)
+        return {"caption": self.captions[episode], "meta": {"index": index}}
+
+
 class DummyConditionDataset:
     def __init__(self, masks):
         self.masks = masks
@@ -113,6 +131,28 @@ def test_select_sample_records_clamps_to_available_caption_samples():
     records = _select_sample_records(datasets, num_samples=3, seed=0)
     assert len(records) == 2
     assert {(record.dataset, record.index) for record in records} == {("a", 0), ("a", 1)}
+
+
+def test_select_sample_records_uses_exact_episode_window_spans():
+    datasets = {
+        "a": DummyEpisodeWindowDataset(["walk", "", "turn"], [2, 3, 1]),
+        "b": DummyEpisodeWindowDataset(["jump", "sit"], [2, 2]),
+    }
+    exhaustive_candidates = [
+        SampleRecord(dataset="a", index=0, global_index=0),
+        SampleRecord(dataset="a", index=1, global_index=1),
+        SampleRecord(dataset="a", index=5, global_index=5),
+        SampleRecord(dataset="b", index=0, global_index=6),
+        SampleRecord(dataset="b", index=1, global_index=7),
+        SampleRecord(dataset="b", index=2, global_index=8),
+        SampleRecord(dataset="b", index=3, global_index=9),
+    ]
+    selected = np.sort(np.random.default_rng(17).choice(len(exhaustive_candidates), size=5, replace=False))
+
+    records = _select_sample_records(datasets, num_samples=5, seed=17)
+
+    assert records == [exhaustive_candidates[int(index)] for index in selected]
+    assert all(dataset.getitem_calls == 0 for dataset in datasets.values())
 
 
 def test_sample_records_round_trip(tmp_path):
