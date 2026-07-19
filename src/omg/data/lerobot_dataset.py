@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import json
 from collections.abc import Iterator
 from bisect import bisect_left, bisect_right
@@ -19,17 +20,20 @@ from omg.utils.rotation_conversions import standardize_quaternion
 
 
 LEROBOT_REPO_ID = "THU-MARS/OMG-Data"
+LEROBOT_REVISION = "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7"
+LEROBOT_MANIFEST_SHA256 = "be443885018180dda0f88ed874efc15cb3776a91148148baf49001d56a5ec855"
 
 
 def _load_dataset_runtime():
     try:
         from datasets import Dataset as HFDataset
         from huggingface_hub import snapshot_download
+        import pyarrow.parquet as pq
     except ImportError as exc:
         raise ImportError(
             "LeRobot input requires the OMG data dependencies. Install with `pip install -e '.[data]'`."
         ) from exc
-    return HFDataset, snapshot_download
+    return HFDataset, snapshot_download, pq
 
 
 def _resolve_root(dataset_root: str | Path | None, *, repo_id: str, revision: str | None) -> Path:
@@ -38,7 +42,7 @@ def _resolve_root(dataset_root: str | Path | None, *, repo_id: str, revision: st
         if not root.exists():
             raise FileNotFoundError(f"LeRobot dataset root does not exist: {root}")
         return root
-    _, snapshot_download = _load_dataset_runtime()
+    _, snapshot_download, _ = _load_dataset_runtime()
     return Path(snapshot_download(repo_id=repo_id, repo_type="dataset", revision=revision))
 
 
@@ -49,6 +53,67 @@ def _parse_split_range(value: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
+def _select_parquet_files_for_index_range(
+    parquet_files: list[Path],
+    *,
+    index_column_name: str,
+    index_start: int,
+    index_end: int,
+) -> tuple[list[Path], int]:
+    """Select exact contiguous parquet files intersecting a global index range."""
+    if index_start < 0 or index_end <= index_start:
+        raise ValueError(f"Invalid global {index_column_name} range: {index_start}:{index_end}")
+    _, _, pq = _load_dataset_runtime()
+    selected: list[Path] = []
+    selected_offset: int | None = None
+    expected_index = 0
+    covered_end = 0
+    for path in parquet_files:
+        parquet_file = pq.ParquetFile(path)
+        rows = int(parquet_file.metadata.num_rows)
+        if rows <= 0:
+            raise ValueError(f"Empty LeRobot data parquet: {path}")
+        try:
+            index_column = parquet_file.schema.names.index(index_column_name)
+        except ValueError as exc:
+            raise ValueError(
+                f"LeRobot parquet has no global {index_column_name!r} column: {path}"
+            ) from exc
+        minima = []
+        maxima = []
+        for row_group_index in range(parquet_file.metadata.num_row_groups):
+            statistics = parquet_file.metadata.row_group(row_group_index).column(index_column).statistics
+            if statistics is None or not statistics.has_min_max:
+                raise ValueError(
+                    f"LeRobot parquet has no {index_column_name!r} statistics: {path}"
+                )
+            minima.append(int(statistics.min))
+            maxima.append(int(statistics.max))
+        file_start = min(minima)
+        file_end = max(maxima) + 1
+        if file_start != expected_index or file_end != file_start + rows:
+            raise ValueError(
+                f"LeRobot parquet {index_column_name!r} values are not globally contiguous: "
+                f"path={path} range={file_start}:{file_end} expected={expected_index}:{expected_index + rows}"
+            )
+        expected_index = file_end
+        if file_start < index_end and file_end > index_start:
+            if selected_offset is None:
+                selected_offset = file_start
+            selected.append(path)
+            covered_end = file_end
+    if not selected or selected_offset is None:
+        raise ValueError(
+            f"No LeRobot parquet intersects {index_column_name} range {index_start}:{index_end}"
+        )
+    if selected_offset > index_start or covered_end < index_end:
+        raise ValueError(
+            f"LeRobot parquets do not cover the requested {index_column_name} range: "
+            f"files={selected_offset}:{covered_end} requested={index_start}:{index_end}"
+        )
+    return selected, selected_offset
+
+
 class LeRobotG1MotionDataset(Dataset):
     """Adapt an official LeRobotDataset v3 dataset to OMG training samples."""
 
@@ -57,7 +122,8 @@ class LeRobotG1MotionDataset(Dataset):
         dataset_root: str | Path | None,
         split: str,
         repo_id: str = LEROBOT_REPO_ID,
-        revision: str | None = None,
+        revision: str = LEROBOT_REVISION,
+        manifest_sha256: str = LEROBOT_MANIFEST_SHA256,
         sequence_duration: float = 2.0,
         fps: float = 30.0,
         canonical_frame_idx: int | None = None,
@@ -77,6 +143,25 @@ class LeRobotG1MotionDataset(Dataset):
         eval_num_windows: int = 3,
     ) -> None:
         self.repo_id = str(repo_id)
+        self.revision = str(revision)
+        self.manifest_sha256 = str(manifest_sha256).lower()
+        if len(self.revision) != 40 or any(character not in "0123456789abcdef" for character in self.revision.lower()):
+            raise ValueError(f"LeRobot revision must be a full 40-character commit SHA, got {self.revision!r}")
+        if len(self.manifest_sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in self.manifest_sha256
+        ):
+            raise ValueError(
+                "LeRobot manifest_sha256 must be a full 64-character SHA-256 digest, "
+                f"got {self.manifest_sha256!r}"
+            )
+        if self.repo_id == LEROBOT_REPO_ID and (
+            self.revision != LEROBOT_REVISION or self.manifest_sha256 != LEROBOT_MANIFEST_SHA256
+        ):
+            raise ValueError(
+                "Unsupported official OMG-Data release identity: "
+                f"revision={self.revision} manifest_sha256={self.manifest_sha256}. "
+                "Update the pinned release constants and configs together."
+            )
         self.dataset_root = _resolve_root(dataset_root, repo_id=self.repo_id, revision=revision)
         self.split = str(split)
         self.sequence_duration = float(sequence_duration)
@@ -101,6 +186,23 @@ class LeRobotG1MotionDataset(Dataset):
         if self.train_window_stride <= 0:
             raise ValueError(f"train_window_stride must be positive, got {self.train_window_stride}")
 
+        manifest_path = self.dataset_root / "meta" / "omg_manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Missing OMG release manifest: {manifest_path}")
+        actual_manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        if actual_manifest_sha256 != self.manifest_sha256:
+            raise ValueError(
+                "LeRobot release manifest identity mismatch: "
+                f"root={self.dataset_root} actual_sha256={actual_manifest_sha256} "
+                f"expected_sha256={self.manifest_sha256} revision={self.revision}"
+            )
+        release_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if release_manifest.get("repo_id") != self.repo_id:
+            raise ValueError(
+                "LeRobot release manifest repository mismatch: "
+                f"manifest={release_manifest.get('repo_id')!r} expected={self.repo_id!r}"
+            )
+
         info_path = self.dataset_root / "meta" / "info.json"
         if not info_path.is_file():
             raise FileNotFoundError(f"Missing LeRobot metadata: {info_path}")
@@ -120,13 +222,23 @@ class LeRobotG1MotionDataset(Dataset):
         if self.use_human_motion and "omg.humanref.motion" not in info["features"]:
             raise ValueError("use_human_motion=true but LeRobot dataset has no `omg.humanref.motion`")
 
-        HFDataset, _ = _load_dataset_runtime()
+        HFDataset, _, _ = _load_dataset_runtime()
         data_files = sorted((self.dataset_root / "data").glob("chunk-*/*.parquet"))
         episode_files = sorted((self.dataset_root / "meta" / "episodes").glob("chunk-*/*.parquet"))
         if not data_files or not episode_files:
             raise FileNotFoundError(f"Incomplete LeRobot v3 dataset under {self.dataset_root}")
-        self.frame_dataset = HFDataset.from_parquet([str(path) for path in data_files])
-        self.episode_dataset = HFDataset.from_parquet([str(path) for path in episode_files])
+        split_ranges = info.get("splits", {})
+        if self.split not in split_ranges:
+            raise ValueError(f"Split {self.split!r} not found in LeRobot metadata")
+        split_episode_start, split_episode_end = _parse_split_range(split_ranges[self.split])
+        selected_episode_files, _ = _select_parquet_files_for_index_range(
+            episode_files,
+            index_column_name="episode_index",
+            index_start=split_episode_start,
+            index_end=split_episode_end,
+        )
+        self.episode_data_files = tuple(selected_episode_files)
+        self.episode_dataset = HFDataset.from_parquet([str(path) for path in selected_episode_files])
 
         self.kinematics = G1Kinematics(kinematics_path=kinematics_path)
         self.codec = G1MotionFeatureCodec(
@@ -136,6 +248,16 @@ class LeRobotG1MotionDataset(Dataset):
             rotation_representation=rotation_representation,
         )
         self.episodes = self._load_episodes(info)
+        split_frame_start = min(int(episode["data_start_row"]) for episode in self.episodes)
+        split_frame_end = max(int(episode["data_end_row"]) for episode in self.episodes)
+        selected_data_files, self.frame_dataset_offset = _select_parquet_files_for_index_range(
+            data_files,
+            index_column_name="index",
+            index_start=split_frame_start,
+            index_end=split_frame_end,
+        )
+        self.frame_data_files = tuple(selected_data_files)
+        self.frame_dataset = HFDataset.from_parquet([str(path) for path in selected_data_files])
         if self.training and is_exhaustive_train_window_policy(self.train_window_policy):
             self.samples = ExhaustiveWindowSampleView(
                 self.episodes,
@@ -153,6 +275,8 @@ class LeRobotG1MotionDataset(Dataset):
         print(
             f"[INFO] LeRobotG1MotionDataset repo_id={self.repo_id} root={self.dataset_root} "
             f"split={self.split} episodes={len(self.episodes)} samples={len(self.samples)} "
+            f"frame_files={len(self.frame_data_files)}/{len(data_files)} "
+            f"episode_files={len(self.episode_data_files)}/{len(episode_files)} "
             f"train_window_policy={self.train_window_policy} train_window_stride={self.train_window_stride}"
         )
 
@@ -233,8 +357,13 @@ class LeRobotG1MotionDataset(Dataset):
         episode_index = int(sample["episode_index"])
         if self._cached_episode_index == episode_index and self._cached_episode_data is not None:
             return self._cached_episode_data
-        start = int(sample["data_start_row"])
-        end = int(sample["data_end_row"])
+        start = int(sample["data_start_row"]) - self.frame_dataset_offset
+        end = int(sample["data_end_row"]) - self.frame_dataset_offset
+        if start < 0 or end > len(self.frame_dataset) or end <= start:
+            raise IndexError(
+                "Episode frame interval is outside the loaded LeRobot split shards: "
+                f"episode={episode_index} local={start}:{end} loaded=0:{len(self.frame_dataset)}"
+            )
         columns = ["observation.state"]
         if self.use_audio:
             columns.extend(("omg.audio.feature", "omg.condition.has_audio"))
@@ -283,6 +412,51 @@ class LeRobotG1MotionDataset(Dataset):
             start = int(torch.randint(0, total_len - self.window_size + 1, (1,)).item())
             return start, self.window_size
         raise KeyError("fixed_window_start is required for evaluation samples")
+
+    def sample_locator(self, idx: int) -> dict[str, Any]:
+        """Return the stable LeRobot identity for one deterministic dataset sample."""
+        sample = self.samples[int(idx)]
+        total_len = int(sample["data_end_row"]) - int(sample["data_start_row"])
+        start, valid_len = self._get_window(sample, total_len)
+        return {
+            "repo_id": self.repo_id,
+            "revision": self.revision,
+            "split": self.split,
+            "episode_index": int(sample["episode_index"]),
+            "window_start": int(start),
+            "num_frames": int(self.window_size),
+            "valid_frames": int(valid_len),
+            "source_dataset": str(sample["source_dataset"]),
+            "source_id": str(sample["sequence_name"]),
+            "segment_index": int(sample.get("segment_index", 0)),
+            "source_start_frame": int(sample.get("source_start_frame", 0)),
+            "source_end_frame": int(sample.get("source_end_frame", total_len)),
+        }
+
+    def sample_has_condition(self, idx: int, condition: str, *, num_frames: int) -> bool:
+        """Check exact full-window condition availability without running FK."""
+        required = int(num_frames)
+        if required <= 0:
+            raise ValueError("num_frames must be positive")
+        sample = self.samples[int(idx)]
+        locator = self.sample_locator(int(idx))
+        if condition == "text":
+            return bool(self.use_text and sample.get("has_text", False) and str(sample.get("segment_caption", "")).strip())
+        if int(locator["valid_frames"]) < required:
+            return False
+        columns = {
+            "audio": (self.use_audio, "omg.condition.has_audio"),
+            "humanref": (self.use_human_motion, "omg.condition.has_humanref"),
+        }
+        if condition not in columns:
+            raise ValueError(f"Unsupported condition={condition!r}")
+        enabled, column = columns[condition]
+        if not enabled:
+            return False
+        episode = self._read_episode(sample)
+        start = int(locator["window_start"])
+        mask = np.asarray(episode[column][start : start + required], dtype=np.bool_).reshape(-1)
+        return bool(mask.shape[0] == required and mask.all())
 
     def _get_prev_indices(self, start: int, total_len: int) -> torch.Tensor:
         return torch.tensor(

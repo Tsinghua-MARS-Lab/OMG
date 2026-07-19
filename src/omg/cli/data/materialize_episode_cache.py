@@ -63,6 +63,12 @@ def write_episode_cache(
     overwrite: bool,
     max_episodes: int | None = None,
 ) -> dict[str, Any]:
+    source_identity = {
+        "repo_id": str(dataset.repo_id),
+        "revision": str(dataset.revision or ""),
+    }
+    if not source_identity["repo_id"] or not source_identity["revision"]:
+        raise ValueError("Episode-cache materialization requires a pinned LeRobot repo_id and revision")
     split_root = output_root / split
     incomplete_root = output_root / f".{split}.incomplete"
     if split_root.exists():
@@ -72,6 +78,23 @@ def write_episode_cache(
     if overwrite and incomplete_root.exists():
         shutil.rmtree(incomplete_root)
     (incomplete_root / "shards").mkdir(parents=True, exist_ok=True)
+    source_identity_path = incomplete_root / "source_identity.json"
+    if source_identity_path.exists():
+        existing_identity = json.loads(source_identity_path.read_text(encoding="utf-8"))
+        if existing_identity != source_identity:
+            raise ValueError(
+                "Cannot resume episode cache from a different LeRobot source: "
+                f"existing={existing_identity!r} requested={source_identity!r}"
+            )
+    elif any((incomplete_root / "shards").iterdir()):
+        raise ValueError(
+            f"Cannot resume unpinned episode-cache shards without {source_identity_path}; rebuild with --overwrite"
+        )
+    else:
+        source_identity_path.write_text(
+            json.dumps(source_identity, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     episode_shards: list[int] = []
     episode_frame_offsets: list[int] = []
@@ -168,6 +191,8 @@ def write_episode_cache(
     )
     summary = {
         "format": EpisodeCachedG1MotionDataset.FORMAT,
+        "source_repo_id": source_identity["repo_id"],
+        "source_revision": source_identity["revision"],
         "split": split,
         "fps": dataset.default_fps,
         "window_size": dataset.window_size,

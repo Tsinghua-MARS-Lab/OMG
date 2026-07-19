@@ -19,6 +19,21 @@ def inspect_episode_cache(root: str | Path, split: str) -> dict[str, Any]:
         return {"root": str(root.resolve()), "split": split, "valid": False, "errors": [str(exc)]}
     if summary.get("format") != EpisodeCachedG1MotionDataset.FORMAT:
         errors.append(f"unexpected format: {summary.get('format')!r}")
+    for key in ("source_repo_id", "source_revision"):
+        if not str(summary.get(key, "")).strip():
+            errors.append(f"summary has no pinned {key}")
+    try:
+        source_identity = json.loads((split_root / "source_identity.json").read_text(encoding="utf-8"))
+        expected_identity = {
+            "repo_id": str(summary.get("source_repo_id", "")),
+            "revision": str(summary.get("source_revision", "")),
+        }
+        if source_identity != expected_identity:
+            errors.append(
+                f"source identity disagrees with summary: source={source_identity!r} summary={expected_identity!r}"
+            )
+    except Exception as exc:
+        errors.append(f"source identity: {exc}")
     try:
         with np.load(split_root / "episodes.npz") as episode_data:
             episode_shards = np.asarray(episode_data["shard"])
@@ -127,6 +142,8 @@ def inspect_episode_cache(root: str | Path, split: str) -> dict[str, Any]:
         "root": str(root.resolve()),
         "split": split,
         "format": summary.get("format"),
+        "source_repo_id": summary.get("source_repo_id"),
+        "source_revision": summary.get("source_revision"),
         "episodes": episodes,
         "frames": frame_count,
         "windows": windows,

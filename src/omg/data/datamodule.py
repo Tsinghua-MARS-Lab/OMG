@@ -391,7 +391,7 @@ class GenerationDataModule(pl.LightningDataModule):
         return getattr(cfg, "_target_", None)
 
     def _with_generation_dataset_defaults(self, cfg: Any) -> Any:
-        if self._dataset_target(cfg) != "omg.data.g1_motion.G1MotionDataset":
+        if self._dataset_target(cfg) != "omg.data.lerobot_dataset.LeRobotG1MotionDataset":
             return cfg
         updates: dict[str, Any] = {}
         if not hasattr(cfg, "get") or cfg.get("rotation_representation") is None:

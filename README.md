@@ -105,7 +105,22 @@ Set explicit roots when using external storage:
 export OMG_DATA_ROOT=/path/to/OMG-Data
 export OMG_MATERIALIZED_ROOT=/path/to/OMG-Data/materialized
 export OMG_MODELS_ROOT=/path/to/OMG-models
+
+hf download THU-MARS/OMG-Data \
+  --type dataset \
+  --revision 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7 \
+  --local-dir "$OMG_DATA_ROOT"
+
+hf cache verify THU-MARS/OMG-Data \
+  --type dataset \
+  --revision 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7 \
+  --local-dir "$OMG_DATA_ROOT" \
+  --fail-on-missing-files
 ```
+
+The data configs pin the official Hub commit and release-manifest SHA-256.
+`OMG_DATA_ROOT` must therefore contain that exact LeRobot v3 snapshot; an old
+or partially substituted local dataset is rejected during initialization.
 
 ## 3. Materialize Data
 
@@ -115,8 +130,9 @@ preserving the exact exhaustive stride-1 window set without duplicating
 overlapping window tensors.
 
 
-You can download precomputed [materialized OMG-Data](https://huggingface.co/datasets/THU-MARS/OMG-Data-Materialized) into `OMG_MATERIALIZED_ROOT`, or generate the
-same layout locally from source OMG-Data:
+Generate the cache locally from the pinned source OMG-Data revision. A
+precomputed cache is valid only when its v2 source identity matches the active
+config exactly:
 
 ```bash
 scripts/materialize_omg_data.sh --overwrite
@@ -126,8 +142,11 @@ Validate every manifest, episode index, and frame tensor before use:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.data.validate_episode_cache \
-  "$OMG_MATERIALIZED_ROOT/omg_episode_cache_rot6d_seq60_hist10_k1"
+  "$OMG_MATERIALIZED_ROOT/omg_episode_cache_v2_rot6d_seq60_hist10_k1"
 ```
+
+Episode cache v2 pins the originating LeRobot repository revision. Unpinned v1
+caches must be rebuilt; they are not accepted as release training input.
 
 Train with materialized data by using:
 
@@ -245,10 +264,10 @@ See [Generation](docs/generation.md) and [Tracking](docs/tracking.md).
 ## 8. Benchmark
 
 Benchmarks that report evaluator-based distribution and retrieval metrics use a
-pretrained evaluator checkpoint. It will be released at:
+pretrained evaluator checkpoint:
 
 ```text
-https://huggingface.co/<org>/OMG-Evaluator
+https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
 ```
 
 Recommended local path:
@@ -257,13 +276,14 @@ Recommended local path:
 models/evaluator/pretrained.ckpt
 ```
 
-Prepare fixed benchmark sample manifests:
+The validated release manifests are versioned under
+`benchmark/samples/mixed_modalities_all_v2`. Regenerate them from the pinned
+dataset only when intentionally defining a new benchmark release:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
-  --data omg_data_lerobot \
-  --exp 50m \
-  --output_dir outputs/benchmark_samples
+  --data omg_data_lerobot_omnimodal \
+  --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
 ```
 
 Run text, audio, human-reference, or artifact benchmarks:
@@ -273,6 +293,7 @@ PYTHONPATH=src python -m omg.cli.generation.benchmark text \
   --exp 50m \
   --ckpt_path outputs/50m_release_train/checkpoints/last.ckpt \
   --evaluator_checkpoint models/evaluator/pretrained.ckpt \
+  --samples_path benchmark/samples/mixed_modalities_all_v2/text_test_1024.jsonl \
   --output_dir outputs/benchmarks/50m_text
 ```
 

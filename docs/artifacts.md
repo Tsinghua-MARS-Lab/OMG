@@ -1,14 +1,13 @@
 # Data and Model Artifacts
 
-## Hugging Face Placeholders
+## Hugging Face Releases
 
-The public artifacts will be released on Hugging Face:
+The public artifacts are released on Hugging Face:
 
 ```text
-OMG-Data:              https://huggingface.co/datasets/THU-MARS/OMG-Data
-Materialized OMG-Data: https://huggingface.co/datasets/THU-MARS/OMG-Data-Materialized
-OMG checkpoints:       https://huggingface.co/<org>/OMG
-OMG evaluator:         https://huggingface.co/<org>/OMG-Evaluator
+OMG-Data:        https://huggingface.co/datasets/THU-MARS/OMG-Data
+OMG checkpoints: https://huggingface.co/THU-MARS/OMG/tree/main/checkpoints
+OMG evaluator:   https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
 ```
 
 ## Default Local Layout

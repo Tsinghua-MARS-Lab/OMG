@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,11 +12,15 @@ pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 
 from omg.cli.data.materialize_episode_cache import write_episode_cache
+from omg.benchmarks.lerobot import BENCHMARK_SAMPLE_SCHEMA, build_lerobot_benchmark_views
 from omg.data.episode_cache import EpisodeCachedG1MotionDataset
-from omg.data.lerobot_dataset import LeRobotG1MotionDataset
+from omg.data.lerobot_dataset import LeRobotG1MotionDataset, _select_parquet_files_for_index_range
+
+TEST_REPO_ID = "example/OMG-Data"
+TEST_REVISION = "1" * 40
 
 
-def _write_lerobot_fixture(root: Path) -> None:
+def _write_lerobot_fixture(root: Path, *, split: str = "train") -> str:
     frame_root = root / "data" / "chunk-000"
     episode_root = root / "meta" / "episodes" / "chunk-000"
     frame_root.mkdir(parents=True)
@@ -37,6 +42,7 @@ def _write_lerobot_fixture(root: Path) -> None:
                 "omg.humanref.motion": human.tolist(),
                 "omg.condition.has_audio": [True] * frames,
                 "omg.condition.has_humanref": [True] * frames,
+                "index": np.arange(frames, dtype=np.int64),
             }
         ),
         frame_root / "file-000.parquet",
@@ -50,14 +56,14 @@ def _write_lerobot_fixture(root: Path) -> None:
                 "dataset_to_index": [frames],
                 "tasks": [["walk forward; style: steady"]],
                 "omg/source_id": ["toy"],
-                "omg/dataset": ["toy_train"],
+                "omg/dataset": [f"toy_{split}"],
                 "omg/segment_index": [0],
                 "omg/source_start_frame": [2],
                 "omg/source_end_frame": [7],
                 "omg/has_text": [True],
                 "omg/has_audio": [True],
                 "omg/has_humanref": [True],
-                "omg/split": ["train"],
+                "omg/split": [split],
             }
         ),
         episode_root / "file-000.parquet",
@@ -66,7 +72,7 @@ def _write_lerobot_fixture(root: Path) -> None:
         json.dumps(
             {
                 "fps": 30,
-                "splits": {"train": "0:1"},
+                "splits": {split: "0:1"},
                 "features": {
                     "observation.state": {"dtype": "float32", "shape": [36]},
                     "action": {"dtype": "float32", "shape": [36]},
@@ -77,13 +83,22 @@ def _write_lerobot_fixture(root: Path) -> None:
         ),
         encoding="utf-8",
     )
+    manifest_path = root / "meta" / "omg_manifest.json"
+    manifest_path.write_text(
+        json.dumps({"format": "LeRobotDataset-v3.0", "repo_id": TEST_REPO_ID}),
+        encoding="utf-8",
+    )
+    return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
 
 def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     dataset_root = tmp_path / "lerobot"
-    _write_lerobot_fixture(dataset_root)
+    manifest_sha256 = _write_lerobot_fixture(dataset_root)
     dataset = LeRobotG1MotionDataset(
         dataset_root=dataset_root,
+        repo_id=TEST_REPO_ID,
+        revision=TEST_REVISION,
+        manifest_sha256=manifest_sha256,
         split="train",
         sequence_duration=2.0,
         fps=30.0,
@@ -129,7 +144,12 @@ def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.Mo
         overwrite=False,
     )
     assert cache_summary["windows"] == 1
-    cached_sample = EpisodeCachedG1MotionDataset(root=cache_root, split="train")[0]
+    cached_sample = EpisodeCachedG1MotionDataset(
+        root=cache_root,
+        split="train",
+        source_repo_id=TEST_REPO_ID,
+        source_revision=TEST_REVISION,
+    )[0]
     for key in (
         "qpos_36",
         "body_pos_w",
@@ -144,3 +164,93 @@ def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.Mo
     assert cached_sample["mask"]["has_audio"].equal(sample["mask"]["has_audio"])
     assert cached_sample["mask"]["has_human_motion"].equal(sample["mask"]["has_human_motion"])
     assert cached_sample["caption"] == sample["caption"]
+
+
+def test_lerobot_benchmark_view_resolves_complete_identity(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "lerobot"
+    manifest_sha256 = _write_lerobot_fixture(dataset_root, split="test")
+    dataset = LeRobotG1MotionDataset(
+        dataset_root=dataset_root,
+        repo_id=TEST_REPO_ID,
+        revision=TEST_REVISION,
+        manifest_sha256=manifest_sha256,
+        split="test",
+        sequence_duration=0.1,
+        fps=30.0,
+        num_prev_states=2,
+        rotation_representation="rot6d",
+        use_audio=True,
+        use_human_motion=True,
+        eval_num_windows=1,
+    )
+    views = build_lerobot_benchmark_views(dataset)
+    view = views["toy_test"]
+    identity = view.sample_identity(0)
+    assert identity == {
+        "schema": BENCHMARK_SAMPLE_SCHEMA,
+        "repo_id": TEST_REPO_ID,
+        "revision": TEST_REVISION,
+        "split": "test",
+        "episode_index": 0,
+        "window_start": 0,
+        "num_frames": 3,
+        "source_dataset": "toy_test",
+        "source_id": "toy",
+        "segment_index": 0,
+        "source_start_frame": 2,
+        "source_end_frame": 7,
+    }
+    assert view.resolve_identity(identity) == 0
+    assert view.sample_has_condition(0, "text", num_frames=3)
+    assert view.sample_has_condition(0, "text", num_frames=6)
+    assert view.sample_has_condition(0, "audio", num_frames=3)
+    assert not view.sample_has_condition(0, "audio", num_frames=6)
+    assert view.sample_has_condition(0, "humanref", num_frames=3)
+    with pytest.raises(ValueError, match="revision"):
+        view.resolve_identity({**identity, "revision": "other"})
+    with pytest.raises(KeyError, match="Unknown LeRobot source datasets"):
+        build_lerobot_benchmark_views(dataset, include=["toy"])
+
+
+def test_lerobot_reader_rejects_wrong_release_manifest(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "lerobot"
+    _write_lerobot_fixture(dataset_root)
+    with pytest.raises(ValueError, match="release manifest identity mismatch"):
+        LeRobotG1MotionDataset(
+            dataset_root=dataset_root,
+            repo_id=TEST_REPO_ID,
+            revision="0" * 40,
+            manifest_sha256="0" * 64,
+            split="train",
+        )
+
+
+def test_lerobot_reader_rejects_unregistered_official_revision(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "lerobot"
+    manifest_sha256 = _write_lerobot_fixture(dataset_root)
+    with pytest.raises(ValueError, match="Unsupported official OMG-Data release identity"):
+        LeRobotG1MotionDataset(
+            dataset_root=dataset_root,
+            repo_id="THU-MARS/OMG-Data",
+            revision="2" * 40,
+            manifest_sha256=manifest_sha256,
+            split="train",
+        )
+
+
+def test_lerobot_split_selects_only_intersecting_contiguous_frame_files(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    paths = []
+    for file_index, start in enumerate((0, 3, 6)):
+        path = data_root / f"file-{file_index:03d}.parquet"
+        pq.write_table(pa.table({"index": np.arange(start, start + 3, dtype=np.int64)}), path)
+        paths.append(path)
+    selected, offset = _select_parquet_files_for_index_range(
+        paths,
+        index_column_name="index",
+        index_start=4,
+        index_end=8,
+    )
+    assert selected == paths[1:]
+    assert offset == 3

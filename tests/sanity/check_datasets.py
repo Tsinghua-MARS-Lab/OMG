@@ -17,9 +17,8 @@ def _config_dir() -> Path:
     return _repo_root() / "configs" / "generation"
 
 
-def _default_datasets_root() -> Path:
-    data_root = Path(os.environ.get("OMG_DATA_ROOT", "data/OMG-Data"))
-    return Path(os.environ.get("OMG_DATASETS_ROOT", str(data_root / "datasets")))
+def _default_dataset_root() -> Path:
+    return Path(os.environ.get("OMG_DATA_ROOT", "data/OMG-Data"))
 
 
 def _shape(value: Any) -> str:
@@ -49,17 +48,17 @@ def _preview(text: Any, max_chars: int = 120) -> str:
 def _include_dataset(name: str, include: list[str] | None) -> bool:
     if include is None:
         return True
-    lowered = name.lower()
-    return any(token.lower() in lowered for token in include)
+    return name in set(include)
 
 
 def _print_root_scan(dataset_root: Path) -> None:
-    print(f"[INFO] datasets_root={dataset_root}")
+    print(f"[INFO] dataset_root={dataset_root}")
     if not dataset_root.exists():
-        print(f"[WARN] datasets_root does not exist on this machine: {dataset_root}")
+        print(f"[WARN] dataset_root does not exist on this machine: {dataset_root}")
         return
-    names = sorted(path.name for path in dataset_root.iterdir() if path.is_dir())
-    print(f"[INFO] datasets_root_dirs={names}")
+    required = ["meta/info.json", "meta/episodes", "data"]
+    entries = {name: (dataset_root / name).exists() for name in required}
+    print(f"[INFO] lerobot_entries={entries}")
 
 
 def _print_sample(dataset_name: str, idx: int, item: dict[str, Any]) -> None:
@@ -83,8 +82,8 @@ def _print_sample(dataset_name: str, idx: int, item: dict[str, Any]) -> None:
         f"has_human_motion_ratio={_mask_ratio(item, 'has_human_motion')}"
     )
     print(
-        f"[INFO]   files source_file={meta.get('source_file')} "
-        f"label_path={meta.get('label_path')} text_path={meta.get('text_path')}"
+        f"[INFO]   identity source={meta.get('source_file')} "
+        f"source_dataset={meta.get('source_dataset')} split={meta.get('split')}"
     )
     print(
         f"[INFO]   window start={meta.get('window_start')} end={meta.get('window_end')} "
@@ -100,19 +99,19 @@ def main() -> int:
             "fix schemas or guess missing side modality files."
         )
     )
-    parser.add_argument("--data", default="omg_data", help="Hydra data config name.")
+    parser.add_argument("--data", default="omg_data_lerobot", help="Hydra data config name.")
     parser.add_argument("--split", default="train", choices=["train", "val", "test"])
-    parser.add_argument("--datasets", nargs="+", default=None, help="Optional dataset name substrings to include.")
+    parser.add_argument("--datasets", nargs="+", default=None, help="Optional exact Hydra dataset names to include.")
     parser.add_argument("--num-samples", type=int, default=3, help="Samples to print per selected dataset.")
     parser.add_argument(
         "--dataset-root",
-        default=str(_default_datasets_root()),
-        help="Expected remote datasets root. Used for logging/root sanity only; Hydra config paths remain authoritative.",
+        default=str(_default_dataset_root()),
+        help="Expected LeRobot v3 dataset root. Used for logging/root sanity only; Hydra config paths remain authoritative.",
     )
     parser.add_argument(
         "overrides",
         nargs="*",
-        help="Additional Hydra overrides, e.g. paths.dataset_root=/data/g1 data.dataset_opts.train.amass.use_human_motion=true",
+        help="Additional Hydra overrides, e.g. paths.data_root=/data/OMG-Data",
     )
     args = parser.parse_args()
 
@@ -151,7 +150,7 @@ def main() -> int:
         dataset = instantiate(dataset_cfg)
         length = len(dataset)
         print(f"[INFO] dataset={name} length={length} class={type(dataset).__name__}")
-        for attr in ("dataset_root", "labels_root", "text_root", "audio_dir", "human_motion_dir"):
+        for attr in ("dataset_root", "repo_id", "revision", "split"):
             value = getattr(dataset, attr, None)
             if value is not None:
                 print(f"[INFO] dataset={name} {attr}={value}")

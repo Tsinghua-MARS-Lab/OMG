@@ -2,118 +2,67 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from dataclasses import asdict
 import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from hydra import compose, initialize_config_dir
-from hydra.utils import instantiate
 from tqdm import tqdm
 
+from omg.benchmarks.protocol import benchmark_condition_cohorts
 from omg.benchmarks.runners.common import (
     SampleRecord,
+    _build_datasets,
     _config_dir,
-    _with_representation_rotation,
-    _jsonable,
-    item_has_condition,
+    _write_sample_records,
 )
-from omg.benchmarks.runners.text import _has_caption
 
 
 CONDITION_SPECS = {
-    "text": {"use_flag": "use_text", "output_name": "text_test_1024.jsonl"},
-    "audio": {
-        "use_flag": "use_audio",
-        "tensor_key": "audio_features",
-        "mask_key": "has_audio",
-        "output_name": "audio_test_512.jsonl",
-    },
-    "humanref": {
-        "use_flag": "use_human_motion",
-        "tensor_key": "human_motion",
-        "mask_key": "has_human_motion",
-        "output_name": "humanref_test_512.jsonl",
-    },
+    "text": {"output_name": "text_test_1024.jsonl"},
+    "audio": {"output_name": "audio_test_512.jsonl"},
+    "humanref": {"output_name": "humanref_test_512.jsonl"},
 }
 
-
-def _condition_dataset_names(cfg: Any, *, split: str, condition: str) -> list[str]:
-    spec = CONDITION_SPECS[condition]
-    names = []
-    for name, dataset_cfg in cfg.data.dataset_opts[split].items():
-        if bool(dataset_cfg.get(spec["use_flag"], False)):
-            names.append(str(name))
-    if not names:
-        raise ValueError(f"No {condition} datasets found in split {split!r}")
-    return names
-
-
-def _build_selected_datasets(cfg: Any, *, split: str, names: list[str], num_frames: int) -> dict[str, Any]:
-    dataset_opts = cfg.data.dataset_opts
-    rotation_representation = cfg.representation.get("rotation_representation") if "representation" in cfg else None
-    datasets = {}
-    for name in names:
-        print(f"[INFO] Instantiating {split} dataset {name}", flush=True)
-        dataset_cfg = dataset_opts[split][name].copy()
-        fps = float(dataset_cfg.get("fps", 30.0))
-        dataset_cfg["sequence_duration"] = float(num_frames) / fps
-        dataset = instantiate(_with_representation_rotation(dataset_cfg, rotation_representation))
-        if len(dataset) <= 0:
-            raise ValueError(f"Dataset {name!r} for split {split!r} is empty")
-        datasets[str(name)] = dataset
-    return datasets
-
-
 def _item_matches_condition(dataset: Any, index: int, *, condition: str, num_frames: int) -> bool:
-    item = dataset[index]
-    if condition == "text":
-        if not _has_caption(dataset, index):
-            return False
-        qpos = item.get("qpos_36")
-        if qpos is None:
-            qpos = item.get("qpos")
-        if qpos is None or int(qpos.shape[0]) < int(num_frames):
-            return False
-        valid = item.get("mask", {}).get("valid") if isinstance(item.get("mask"), dict) else None
-        if valid is not None:
-            valid_prefix = valid[: int(num_frames)]
-            if hasattr(valid_prefix, "detach"):
-                return bool(valid_prefix.detach().bool().all().item())
-            return bool(np.asarray(valid_prefix, dtype=bool).all())
-        return True
-    spec = CONDITION_SPECS[condition]
-    return item_has_condition(
-        item,
-        tensor_key=str(spec["tensor_key"]),
-        mask_key=str(spec["mask_key"]),
-        num_frames=num_frames,
-    )
+    if not hasattr(dataset, "sample_has_condition"):
+        raise TypeError("Benchmark sample preparation requires LeRobot benchmark views")
+    return bool(dataset.sample_has_condition(index, condition, num_frames=int(num_frames)))
 
 
 def _candidate_records(
     datasets: dict[str, Any],
     *,
-    dataset_names: list[str],
+    cohorts: dict[str, tuple[str, ...]],
     condition: str,
     num_frames: int,
 ) -> dict[str, list[SampleRecord]]:
-    by_dataset: dict[str, list[SampleRecord]] = defaultdict(list)
-    global_index = 0
-    selected_names = set(dataset_names)
+    by_cohort: dict[str, list[SampleRecord]] = defaultdict(list)
+    source_to_cohort: dict[str, str] = {}
+    for cohort, source_datasets in cohorts.items():
+        for source_dataset in source_datasets:
+            if source_dataset not in datasets:
+                raise KeyError(f"Benchmark cohort {cohort!r} requires missing source dataset {source_dataset!r}")
+            if source_dataset in source_to_cohort:
+                raise ValueError(f"Source dataset {source_dataset!r} belongs to multiple benchmark cohorts")
+            source_to_cohort[source_dataset] = cohort
     for dataset_name, dataset in datasets.items():
-        is_selected = dataset_name in selected_names
+        cohort = source_to_cohort.get(dataset_name)
+        if cohort is None:
+            continue
         for index in tqdm(range(len(dataset)), desc=f"Scan {condition} {dataset_name}", unit="idx", leave=False):
-            if is_selected and _item_matches_condition(dataset, index, condition=condition, num_frames=num_frames):
-                by_dataset[dataset_name].append(SampleRecord(dataset=dataset_name, index=index, global_index=global_index))
-            global_index += 1
-    missing = [name for name in dataset_names if not by_dataset.get(name)]
+            if _item_matches_condition(dataset, index, condition=condition, num_frames=num_frames):
+                source_index = dataset.global_index(index)
+                by_cohort[cohort].append(
+                    SampleRecord(dataset=dataset_name, index=index, global_index=source_index)
+                )
+    missing = [cohort for cohort in cohorts if not by_cohort.get(cohort)]
     if missing:
-        print(f"[WARN] No valid {condition} samples found for datasets: {missing}", flush=True)
-    if not by_dataset:
+        raise ValueError(f"No valid {condition} samples found for benchmark cohorts: {missing}")
+    if not by_cohort:
         raise ValueError(f"No valid {condition} samples found in selected datasets")
-    return dict(by_dataset)
+    return dict(by_cohort)
 
 
 def _balanced_counts(candidate_counts: dict[str, int], *, total: int) -> dict[str, int]:
@@ -165,20 +114,16 @@ def _select_balanced_records(
     return selected, candidate_counts, selected_counts
 
 
-def _write_sample_records(path: Path, records: list[SampleRecord], datasets: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        for record in records:
-            item = datasets[record.dataset][record.index]
-            payload = asdict(record)
-            payload["caption"] = str(item.get("caption", ""))
-            payload["meta"] = _jsonable(item.get("meta", {}))
-            handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
-
-
-def _write_manifest_summary(path: Path, summaries: dict[str, dict[str, Any]], args: argparse.Namespace) -> None:
+def _write_manifest_summary(
+    path: Path,
+    summaries: dict[str, dict[str, Any]],
+    args: argparse.Namespace,
+    dataset_identity: dict[str, str],
+) -> None:
     payload = {
-        "benchmark_sample_set": "mixed_modalities_all_v1",
+        "benchmark_sample_set": "mixed_modalities_all_v2",
+        "sample_schema": "omg.benchmark.sample.v2",
+        **dataset_identity,
         "data": args.data,
         "exp": args.exp,
         "split": args.split,
@@ -197,9 +142,9 @@ def _output_name(condition: str, *, args: argparse.Namespace, num_samples: int) 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare fixed mixed-modality benchmark sample manifests.")
-    parser.add_argument("--output_dir", default="outputs/benchmark_samples/mixed_modalities_all_v1")
+    parser.add_argument("--output_dir", default="outputs/benchmark_samples/mixed_modalities_all_v2")
     parser.add_argument("--exp", default="100m")
-    parser.add_argument("--data", default="omg_data")
+    parser.add_argument("--data", default="omg_data_lerobot_omnimodal")
     parser.add_argument("--split", choices=["val", "test"], default="test")
     parser.add_argument("--num_frames", type=int, default=60)
     parser.add_argument("--seed", type=int, default=0)
@@ -232,12 +177,35 @@ def main() -> None:
             ],
         )
 
+    cohorts_by_condition = {
+        condition: benchmark_condition_cohorts(condition, args.split)
+        for condition in args.conditions
+    }
+    source_datasets = sorted(
+        {
+            source_dataset
+            for cohorts in cohorts_by_condition.values()
+            for cohort_sources in cohorts.values()
+            for source_dataset in cohort_sources
+        }
+    )
+    datasets = _build_datasets(
+        cfg,
+        args.split,
+        include=source_datasets,
+        num_frames=args.num_frames,
+    )
+    first_dataset = next(iter(datasets.values()))
+    dataset_identity = {"repo_id": str(first_dataset.repo_id), "revision": str(first_dataset.revision)}
     summaries: dict[str, dict[str, Any]] = {}
     for condition in args.conditions:
-        spec = CONDITION_SPECS[condition]
-        dataset_names = _condition_dataset_names(cfg, split=args.split, condition=condition)
-        datasets = _build_selected_datasets(cfg, split=args.split, names=dataset_names, num_frames=args.num_frames)
-        candidates = _candidate_records(datasets, dataset_names=dataset_names, condition=condition, num_frames=args.num_frames)
+        cohorts = cohorts_by_condition[condition]
+        candidates = _candidate_records(
+            datasets,
+            cohorts=cohorts,
+            condition=condition,
+            num_frames=args.num_frames,
+        )
         records, candidate_counts, selected_counts = _select_balanced_records(
             candidates,
             num_samples=requested[condition],
@@ -250,11 +218,12 @@ def main() -> None:
             "num_samples": len(records),
             "candidate_counts": candidate_counts,
             "selected_counts": selected_counts,
+            "cohorts": {name: list(source_datasets) for name, source_datasets in cohorts.items()},
         }
         print(f"[INFO] wrote {condition} samples: {path} selected={selected_counts}", flush=True)
 
     summary_path = output_dir / str(args.summary_name)
-    _write_manifest_summary(summary_path, summaries, args)
+    _write_manifest_summary(summary_path, summaries, args, dataset_identity)
     print(f"[INFO] wrote summary: {summary_path}", flush=True)
 
 

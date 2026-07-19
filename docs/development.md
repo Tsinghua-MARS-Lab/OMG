@@ -8,7 +8,7 @@ src/omg/
   callbacks/      Lightning callbacks.
   cli/            User-facing command-line entry points.
   core/           Small shared logging/path/tensor utilities.
-  data/           Unified OMG-Data and materialized dataset loaders.
+  data/           Canonical LeRobotDataset v3 reader and derived episode cache.
   generation/     Training data, denoisers, diffusion, losses, export.
   motion/         G1 motion representation utilities.
   pipeline/       Offline diffusion and tracker orchestration.
