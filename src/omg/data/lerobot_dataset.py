@@ -12,11 +12,13 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from omg.core.tensor import get_valid_mask, repeat_to_max_len
-from omg.data.lerobot_schema import LEROBOT_REPO_ID
 from omg.data.windowing import ExhaustiveWindowSampleView, is_exhaustive_train_window_policy
 from omg.motion.feature_codec import G1MotionFeatureCodec
 from omg.robots.g1.kinematics import G1Kinematics
 from omg.utils.rotation_conversions import standardize_quaternion
+
+
+LEROBOT_REPO_ID = "THU-MARS/OMG-Data"
 
 
 def _load_dataset_runtime():

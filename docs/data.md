@@ -96,9 +96,9 @@ and text labels are represented through the standard `task_index`/tasks table.
 Optional aligned features are `omg.audio.feature` and
 `omg.humanref.motion`.
 
-The maintainer-only unified `.npz + labels + info.yaml` config remains at
-`configs/generation/data/omg_data.yaml`; it is an export input, not the public
-training format.
+The unified `.npz + labels + info.yaml` config remains at
+`configs/generation/data/omg_data.yaml` for source-data benchmarks and custom
+datasets; it is not required for training on the public LeRobot release.
 
 The materialized-data config is:
 
@@ -198,66 +198,7 @@ text+humanref: imitate this+/path/to/human_reference.npz
 Arrays may be flat `(T, D)` or joint-shaped `(T, J, 3)`, depending on the model
 that was trained and exported.
 
-## Export LeRobot Data
-
-Maintainers can export unified source datasets to the official LeRobotDataset
-v3 contract with frame-level Parquet files and relational episode metadata:
-
-Build a source-data config from a unified OMG dataset root:
-
-```bash
-PYTHONPATH=src python -m omg.cli.data.build_lerobot_config \
-  --source-root /path/to/omg_data/original \
-  --output configs/generated/omg_lerobot_release.yaml
-```
-
-By default, this excludes `beat2_*` datasets because they do not carry text
-labels, and excludes `amass_finetune`.
-
-```bash
-PYTHONPATH=src python -m omg.cli.data.export_lerobot \
-  --data-config configs/generated/omg_lerobot_release.yaml \
-  --paths-config configs/generation/paths/default.yaml \
-  --representation-config configs/generation/representation/125d.yaml \
-  --output-root /path/to/OMG-Data \
-  --splits train val test \
-  --frames-per-file 2000000 \
-  --episodes-per-file 100000 \
-  --overwrite
-```
-
-The exporter writes:
-
-```text
-OMG-Data/
-  data/chunk-000/file-*.parquet
-  meta/info.json
-  meta/stats.json
-  meta/tasks.parquet
-  meta/episodes/chunk-000/file-*.parquet
-  meta/omg_manifest.json
-```
-
-Inspect an exported dataset with:
-
-```bash
-PYTHONPATH=src python -m omg.cli.data.inspect_lerobot \
-  /path/to/OMG-Data \
-  --output /path/to/OMG-Data/inspect_summary.json
-```
-
-The release gate also loads the result with the official LeRobot package in an
-isolated environment, so it cannot accidentally validate only against OMG's
-adapter:
-
-```bash
-uv run --isolated --no-project --python 3.10 --with lerobot==0.4.4 \
-  scripts/validate_lerobot_official.py /path/to/OMG-Data
-```
-
-Each source text segment becomes one LeRobot episode. The exported
-`observation.state` is `qpos_36[t]`, and `action` is the next target
-`qpos_36[t+1]`; it is a reference-motion target, not a low-level motor command.
+## Materialize OMG-Data
 
 Official LeRobot source data can be materialized with the standard materializer
 through `omg.data.lerobot_dataset.LeRobotG1MotionDataset`:
