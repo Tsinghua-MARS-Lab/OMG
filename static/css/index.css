@@ -327,6 +327,13 @@ sup {
   -webkit-mask-image: url("../images/omg/icons/cite.svg");
 }
 
+.button-icon-huggingface {
+  display: block;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .button-primary {
   background: var(--ink);
   color: #fffaf4;
