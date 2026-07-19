@@ -8,7 +8,8 @@
   <p>
     <a href="https://arxiv.org/"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b.svg" alt="arXiv"></a>
     <a href="https://tsinghua-mars-lab.github.io/OMG/"><img src="https://img.shields.io/badge/Website-Page-Green" alt="Website"></a>
-    <a href="https://huggingface.co/THU-MARS/OMG"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models%20%26%20Data-FFD21E" alt="Hugging Face"></a>
+    <a href="https://huggingface.co/THU-MARS/OMG"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Model-OMG-FFD21E" alt="Hugging Face model"></a>
+    <a href="https://huggingface.co/datasets/THU-MARS/OMG-Data"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-OMG--Data-FFD21E" alt="Hugging Face dataset"></a>
   </p>
   <p>
     <img src="assets/teaser.png" alt="OMG teaser" width="900">
