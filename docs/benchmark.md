@@ -19,11 +19,11 @@ evaluation paths.
 
 ## Evaluator Checkpoint
 
-Evaluator-based distribution and retrieval metrics require a pretrained OMG
-evaluator checkpoint. It will be released at:
+Evaluator-based distribution and retrieval metrics require the released OMG
+evaluator checkpoint:
 
 ```text
-https://huggingface.co/<org>/OMG-Evaluator
+https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
 ```
 
 Recommended local path:

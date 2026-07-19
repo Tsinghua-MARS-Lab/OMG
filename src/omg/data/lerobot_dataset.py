@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import json
 from collections.abc import Iterator
 from bisect import bisect_left, bisect_right
@@ -19,6 +20,8 @@ from omg.utils.rotation_conversions import standardize_quaternion
 
 
 LEROBOT_REPO_ID = "THU-MARS/OMG-Data"
+LEROBOT_REVISION = "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7"
+LEROBOT_MANIFEST_SHA256 = "be443885018180dda0f88ed874efc15cb3776a91148148baf49001d56a5ec855"
 
 
 def _load_dataset_runtime():
@@ -57,7 +60,8 @@ class LeRobotG1MotionDataset(Dataset):
         dataset_root: str | Path | None,
         split: str,
         repo_id: str = LEROBOT_REPO_ID,
-        revision: str | None = None,
+        revision: str = LEROBOT_REVISION,
+        manifest_sha256: str = LEROBOT_MANIFEST_SHA256,
         sequence_duration: float = 2.0,
         fps: float = 30.0,
         canonical_frame_idx: int | None = None,
@@ -77,7 +81,15 @@ class LeRobotG1MotionDataset(Dataset):
         eval_num_windows: int = 3,
     ) -> None:
         self.repo_id = str(repo_id)
-        self.revision = None if revision is None else str(revision)
+        self.revision = str(revision)
+        self.manifest_sha256 = str(manifest_sha256).lower()
+        if len(self.revision) != 40:
+            raise ValueError(f"LeRobot revision must be a full 40-character commit SHA, got {self.revision!r}")
+        if len(self.manifest_sha256) != 64:
+            raise ValueError(
+                "LeRobot manifest_sha256 must be a full 64-character SHA-256 digest, "
+                f"got {self.manifest_sha256!r}"
+            )
         self.dataset_root = _resolve_root(dataset_root, repo_id=self.repo_id, revision=revision)
         self.split = str(split)
         self.sequence_duration = float(sequence_duration)
@@ -101,6 +113,23 @@ class LeRobotG1MotionDataset(Dataset):
         self.train_window_stride = int(1 if train_window_stride is None else train_window_stride)
         if self.train_window_stride <= 0:
             raise ValueError(f"train_window_stride must be positive, got {self.train_window_stride}")
+
+        manifest_path = self.dataset_root / "meta" / "omg_manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Missing OMG release manifest: {manifest_path}")
+        actual_manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        if actual_manifest_sha256 != self.manifest_sha256:
+            raise ValueError(
+                "LeRobot release manifest identity mismatch: "
+                f"root={self.dataset_root} actual_sha256={actual_manifest_sha256} "
+                f"expected_sha256={self.manifest_sha256} revision={self.revision}"
+            )
+        release_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if release_manifest.get("repo_id") != self.repo_id:
+            raise ValueError(
+                "LeRobot release manifest repository mismatch: "
+                f"manifest={release_manifest.get('repo_id')!r} expected={self.repo_id!r}"
+            )
 
         info_path = self.dataset_root / "meta" / "info.json"
         if not info_path.is_file():

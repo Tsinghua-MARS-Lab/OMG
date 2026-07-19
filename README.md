@@ -107,6 +107,10 @@ export OMG_MATERIALIZED_ROOT=/path/to/OMG-Data/materialized
 export OMG_MODELS_ROOT=/path/to/OMG-models
 ```
 
+The data configs pin the official Hub commit and release-manifest SHA-256.
+`OMG_DATA_ROOT` must therefore contain that exact LeRobot v3 snapshot; an old
+or partially substituted local dataset is rejected during initialization.
+
 ## 3. Materialize Data
 
 Materialization precomputes frame-level episode kinematics. It is recommended

@@ -38,7 +38,10 @@ configs/generation/data/omg_data_lerobot_omnimodal.yaml
 ```
 
 The first enables text only. The second enables text, audio, and human
-reference conditioning. A benchmark refuses an unpinned revision.
+reference conditioning. The loader verifies both the full 40-character Hub
+revision and the SHA-256 of `meta/omg_manifest.json`; pointing
+`OMG_DATA_ROOT` at an older or different local snapshot fails before any
+training or benchmark samples are read.
 
 ## G1 representation
 
