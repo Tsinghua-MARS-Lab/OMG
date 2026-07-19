@@ -16,6 +16,7 @@ from omg.benchmarks.lerobot import BENCHMARK_SAMPLE_SCHEMA, build_lerobot_benchm
 from omg.data.episode_cache import EpisodeCachedG1MotionDataset
 from omg.data.lerobot_dataset import LeRobotG1MotionDataset
 
+TEST_REPO_ID = "example/OMG-Data"
 TEST_REVISION = "1" * 40
 
 
@@ -83,7 +84,7 @@ def _write_lerobot_fixture(root: Path, *, split: str = "train") -> str:
     )
     manifest_path = root / "meta" / "omg_manifest.json"
     manifest_path.write_text(
-        json.dumps({"format": "LeRobotDataset-v3.0", "repo_id": "THU-MARS/OMG-Data"}),
+        json.dumps({"format": "LeRobotDataset-v3.0", "repo_id": TEST_REPO_ID}),
         encoding="utf-8",
     )
     return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
@@ -94,7 +95,7 @@ def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.Mo
     manifest_sha256 = _write_lerobot_fixture(dataset_root)
     dataset = LeRobotG1MotionDataset(
         dataset_root=dataset_root,
-        repo_id="THU-MARS/OMG-Data",
+        repo_id=TEST_REPO_ID,
         revision=TEST_REVISION,
         manifest_sha256=manifest_sha256,
         split="train",
@@ -145,7 +146,7 @@ def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.Mo
     cached_sample = EpisodeCachedG1MotionDataset(
         root=cache_root,
         split="train",
-        source_repo_id="THU-MARS/OMG-Data",
+        source_repo_id=TEST_REPO_ID,
         source_revision=TEST_REVISION,
     )[0]
     for key in (
@@ -169,7 +170,7 @@ def test_lerobot_benchmark_view_resolves_complete_identity(tmp_path: Path) -> No
     manifest_sha256 = _write_lerobot_fixture(dataset_root, split="test")
     dataset = LeRobotG1MotionDataset(
         dataset_root=dataset_root,
-        repo_id="THU-MARS/OMG-Data",
+        repo_id=TEST_REPO_ID,
         revision=TEST_REVISION,
         manifest_sha256=manifest_sha256,
         split="test",
@@ -186,7 +187,7 @@ def test_lerobot_benchmark_view_resolves_complete_identity(tmp_path: Path) -> No
     identity = view.sample_identity(0)
     assert identity == {
         "schema": BENCHMARK_SAMPLE_SCHEMA,
-        "repo_id": "THU-MARS/OMG-Data",
+        "repo_id": TEST_REPO_ID,
         "revision": TEST_REVISION,
         "split": "test",
         "episode_index": 0,
@@ -216,8 +217,21 @@ def test_lerobot_reader_rejects_wrong_release_manifest(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="release manifest identity mismatch"):
         LeRobotG1MotionDataset(
             dataset_root=dataset_root,
-            repo_id="THU-MARS/OMG-Data",
+            repo_id=TEST_REPO_ID,
             revision="0" * 40,
             manifest_sha256="0" * 64,
+            split="train",
+        )
+
+
+def test_lerobot_reader_rejects_unregistered_official_revision(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "lerobot"
+    manifest_sha256 = _write_lerobot_fixture(dataset_root)
+    with pytest.raises(ValueError, match="Unsupported official OMG-Data release identity"):
+        LeRobotG1MotionDataset(
+            dataset_root=dataset_root,
+            repo_id="THU-MARS/OMG-Data",
+            revision="2" * 40,
+            manifest_sha256=manifest_sha256,
             split="train",
         )

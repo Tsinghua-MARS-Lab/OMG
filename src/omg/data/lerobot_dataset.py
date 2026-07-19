@@ -83,12 +83,22 @@ class LeRobotG1MotionDataset(Dataset):
         self.repo_id = str(repo_id)
         self.revision = str(revision)
         self.manifest_sha256 = str(manifest_sha256).lower()
-        if len(self.revision) != 40:
+        if len(self.revision) != 40 or any(character not in "0123456789abcdef" for character in self.revision.lower()):
             raise ValueError(f"LeRobot revision must be a full 40-character commit SHA, got {self.revision!r}")
-        if len(self.manifest_sha256) != 64:
+        if len(self.manifest_sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in self.manifest_sha256
+        ):
             raise ValueError(
                 "LeRobot manifest_sha256 must be a full 64-character SHA-256 digest, "
                 f"got {self.manifest_sha256!r}"
+            )
+        if self.repo_id == LEROBOT_REPO_ID and (
+            self.revision != LEROBOT_REVISION or self.manifest_sha256 != LEROBOT_MANIFEST_SHA256
+        ):
+            raise ValueError(
+                "Unsupported official OMG-Data release identity: "
+                f"revision={self.revision} manifest_sha256={self.manifest_sha256}. "
+                "Update the pinned release constants and configs together."
             )
         self.dataset_root = _resolve_root(dataset_root, repo_id=self.repo_id, revision=revision)
         self.split = str(split)
