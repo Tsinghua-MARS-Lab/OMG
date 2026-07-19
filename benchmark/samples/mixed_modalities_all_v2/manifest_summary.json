@@ -1,0 +1,86 @@
+{
+  "benchmark_sample_set": "mixed_modalities_all_v2",
+  "conditions": {
+    "audio": {
+      "all_condition_windows_valid": true,
+      "all_identities_resolved": true,
+      "cohort_counts": {
+        "aioz_gdance": 103,
+        "aistpp": 103,
+        "compas3d": 102,
+        "finedance": 102,
+        "opendance": 102
+      },
+      "num_samples": 512,
+      "path": "audio_test_512.jsonl",
+      "sha256": "8584305c3e059c878e717bb1b8462c73d3ce2331bb9ec247ac5d958560e25bfc",
+      "unique_episodes": 469
+    },
+    "humanref": {
+      "all_condition_windows_valid": true,
+      "all_identities_resolved": true,
+      "cohort_counts": {
+        "aistpp": 47,
+        "amass": 47,
+        "beat2": 47,
+        "finedance": 47,
+        "fitness": 47,
+        "humanml": 47,
+        "idea400": 46,
+        "motiongv": 46,
+        "motionllama": 46,
+        "permo": 46,
+        "snapmogen": 46
+      },
+      "num_samples": 512,
+      "path": "humanref_test_512.jsonl",
+      "sha256": "900309a5724ddc7a062dab40af132d06714b040d0f0bb2f81c3f7eed5b0acf5b",
+      "unique_episodes": 472
+    },
+    "text": {
+      "all_condition_windows_valid": true,
+      "all_identities_resolved": true,
+      "cohort_counts": {
+        "100style": 86,
+        "amass": 86,
+        "bones_seed": 86,
+        "fitness": 86,
+        "humanml": 85,
+        "idea400": 85,
+        "lafan1": 85,
+        "motiongv": 85,
+        "motionllama": 85,
+        "omomo": 85,
+        "permo": 85,
+        "snapmogen": 85
+      },
+      "num_samples": 1024,
+      "path": "text_test_1024.jsonl",
+      "sha256": "dacee8cf3712b7d22316ec0506a0348bed9a123346e047d1ce1f437bc0027749",
+      "short_motion_windows": 56,
+      "unique_episodes": 934
+    }
+  },
+  "data_manifest_sha256": "be443885018180dda0f88ed874efc15cb3776a91148148baf49001d56a5ec855",
+  "migration": {
+    "caption_updates_from_canonical_tasks": 4,
+    "identity_plus_redundant_validated_v1_index": 26,
+    "identity_unique": 2022,
+    "source_sample_set": "mixed_modalities_all_v1",
+    "source_model_repo": "THU-MARS/OMG",
+    "source_model_revision": "70d63a9a5d6ce72928f7d9579241c97981de0307"
+  },
+  "num_frames": 60,
+  "repo_id": "THU-MARS/OMG-Data",
+  "revision": "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7",
+  "sample_schema": "omg.benchmark.sample.v2",
+  "seed": 0,
+  "split": "test",
+  "validation": {
+    "all_condition_windows_valid": true,
+    "all_identities_resolved": true,
+    "official_data_episodes": 798181,
+    "official_data_frames": 121171939,
+    "representative_qpos_source_views_loaded": 31
+  }
+}

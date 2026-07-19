@@ -44,7 +44,15 @@ export OMG_T5_3B_MODEL=models/t5-3b-local
 
 ## Sample Preparation
 
-Prepare benchmark samples from the pinned public LeRobotDataset v3 release:
+The validated release manifests are committed at:
+
+```text
+benchmark/samples/mixed_modalities_all_v2/
+```
+
+Use these files for paper/release comparisons. To intentionally define a new
+benchmark release, regenerate candidates from the pinned public LeRobotDataset
+v3 source:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
@@ -62,8 +70,9 @@ The preparation command preserves the release cohort protocol (12 text
 cohorts, 5 audio cohorts, and 11 human-reference cohorts) while resolving each
 selected row to its canonical LeRobot source dataset.
 
-Use the generated manifest as input to benchmark runners, for example with
-`--samples_path .../text_test_1024.jsonl`. Dataset names passed through
+Use the committed manifest as input to benchmark runners, for example with
+`--samples_path benchmark/samples/mixed_modalities_all_v2/text_test_1024.jsonl`.
+Dataset names passed through
 `--datasets` are exact values from the `omg/dataset` episode column.
 External baseline reproduction scripts live on the `repro/baselines` branch;
 `main` keeps the benchmark artifact interface only.

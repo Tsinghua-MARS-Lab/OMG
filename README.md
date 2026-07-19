@@ -264,10 +264,10 @@ See [Generation](docs/generation.md) and [Tracking](docs/tracking.md).
 ## 8. Benchmark
 
 Benchmarks that report evaluator-based distribution and retrieval metrics use a
-pretrained evaluator checkpoint. It will be released at:
+pretrained evaluator checkpoint:
 
 ```text
-https://huggingface.co/<org>/OMG-Evaluator
+https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
 ```
 
 Recommended local path:
@@ -276,13 +276,14 @@ Recommended local path:
 models/evaluator/pretrained.ckpt
 ```
 
-Prepare fixed benchmark sample manifests:
+The validated release manifests are versioned under
+`benchmark/samples/mixed_modalities_all_v2`. Regenerate them from the pinned
+dataset only when intentionally defining a new benchmark release:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
-  --data omg_data_lerobot \
-  --exp 50m \
-  --output_dir outputs/benchmark_samples
+  --data omg_data_lerobot_omnimodal \
+  --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
 ```
 
 Run text, audio, human-reference, or artifact benchmarks:
@@ -292,6 +293,7 @@ PYTHONPATH=src python -m omg.cli.generation.benchmark text \
   --exp 50m \
   --ckpt_path outputs/50m_release_train/checkpoints/last.ckpt \
   --evaluator_checkpoint models/evaluator/pretrained.ckpt \
+  --samples_path benchmark/samples/mixed_modalities_all_v2/text_test_1024.jsonl \
   --output_dir outputs/benchmarks/50m_text
 ```
 

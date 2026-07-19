@@ -1,3 +1,5 @@
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -149,6 +151,21 @@ def test_benchmark_cohorts_preserve_release_protocol():
     )
     assert "choreomaster_test" not in benchmark_source_datasets("audio", "test")
     assert set(humanref["beat2"]) <= set(benchmark_source_datasets("humanref", "test"))
+
+
+def test_committed_v2_benchmark_manifests_match_release_summary():
+    root = Path(__file__).resolve().parents[2] / "benchmark" / "samples" / "mixed_modalities_all_v2"
+    summary = json.loads((root / "manifest_summary.json").read_text(encoding="utf-8"))
+    assert summary["sample_schema"] == "omg.benchmark.sample.v2"
+    assert summary["revision"] == "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7"
+    for condition in ("text", "audio", "humanref"):
+        condition_summary = summary["conditions"][condition]
+        path = root / condition_summary["path"]
+        records = _load_sample_records(path)
+        assert len(records) == condition_summary["num_samples"]
+        assert {record.schema for record in records} == {summary["sample_schema"]}
+        assert {record.revision for record in records} == {summary["revision"]}
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == condition_summary["sha256"]
 
 
 def test_select_condition_records_requires_full_condition_window():
