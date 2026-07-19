@@ -14,7 +14,7 @@ pq = pytest.importorskip("pyarrow.parquet")
 from omg.cli.data.materialize_episode_cache import write_episode_cache
 from omg.benchmarks.lerobot import BENCHMARK_SAMPLE_SCHEMA, build_lerobot_benchmark_views
 from omg.data.episode_cache import EpisodeCachedG1MotionDataset
-from omg.data.lerobot_dataset import LeRobotG1MotionDataset
+from omg.data.lerobot_dataset import LeRobotG1MotionDataset, _select_parquet_files_for_index_range
 
 TEST_REPO_ID = "example/OMG-Data"
 TEST_REVISION = "1" * 40
@@ -42,6 +42,7 @@ def _write_lerobot_fixture(root: Path, *, split: str = "train") -> str:
                 "omg.humanref.motion": human.tolist(),
                 "omg.condition.has_audio": [True] * frames,
                 "omg.condition.has_humanref": [True] * frames,
+                "index": np.arange(frames, dtype=np.int64),
             }
         ),
         frame_root / "file-000.parquet",
@@ -235,3 +236,21 @@ def test_lerobot_reader_rejects_unregistered_official_revision(tmp_path: Path) -
             manifest_sha256=manifest_sha256,
             split="train",
         )
+
+
+def test_lerobot_split_selects_only_intersecting_contiguous_frame_files(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    paths = []
+    for file_index, start in enumerate((0, 3, 6)):
+        path = data_root / f"file-{file_index:03d}.parquet"
+        pq.write_table(pa.table({"index": np.arange(start, start + 3, dtype=np.int64)}), path)
+        paths.append(path)
+    selected, offset = _select_parquet_files_for_index_range(
+        paths,
+        index_column_name="index",
+        index_start=4,
+        index_end=8,
+    )
+    assert selected == paths[1:]
+    assert offset == 3

@@ -28,11 +28,12 @@ def _load_dataset_runtime():
     try:
         from datasets import Dataset as HFDataset
         from huggingface_hub import snapshot_download
+        import pyarrow.parquet as pq
     except ImportError as exc:
         raise ImportError(
             "LeRobot input requires the OMG data dependencies. Install with `pip install -e '.[data]'`."
         ) from exc
-    return HFDataset, snapshot_download
+    return HFDataset, snapshot_download, pq
 
 
 def _resolve_root(dataset_root: str | Path | None, *, repo_id: str, revision: str | None) -> Path:
@@ -41,7 +42,7 @@ def _resolve_root(dataset_root: str | Path | None, *, repo_id: str, revision: st
         if not root.exists():
             raise FileNotFoundError(f"LeRobot dataset root does not exist: {root}")
         return root
-    _, snapshot_download = _load_dataset_runtime()
+    _, snapshot_download, _ = _load_dataset_runtime()
     return Path(snapshot_download(repo_id=repo_id, repo_type="dataset", revision=revision))
 
 
@@ -50,6 +51,67 @@ def _parse_split_range(value: str) -> tuple[int, int]:
     if len(parts) != 2:
         raise ValueError(f"Expected LeRobot split range `start:end`, got {value!r}")
     return int(parts[0]), int(parts[1])
+
+
+def _select_parquet_files_for_index_range(
+    parquet_files: list[Path],
+    *,
+    index_column_name: str,
+    index_start: int,
+    index_end: int,
+) -> tuple[list[Path], int]:
+    """Select exact contiguous parquet files intersecting a global index range."""
+    if index_start < 0 or index_end <= index_start:
+        raise ValueError(f"Invalid global {index_column_name} range: {index_start}:{index_end}")
+    _, _, pq = _load_dataset_runtime()
+    selected: list[Path] = []
+    selected_offset: int | None = None
+    expected_index = 0
+    covered_end = 0
+    for path in parquet_files:
+        parquet_file = pq.ParquetFile(path)
+        rows = int(parquet_file.metadata.num_rows)
+        if rows <= 0:
+            raise ValueError(f"Empty LeRobot data parquet: {path}")
+        try:
+            index_column = parquet_file.schema.names.index(index_column_name)
+        except ValueError as exc:
+            raise ValueError(
+                f"LeRobot parquet has no global {index_column_name!r} column: {path}"
+            ) from exc
+        minima = []
+        maxima = []
+        for row_group_index in range(parquet_file.metadata.num_row_groups):
+            statistics = parquet_file.metadata.row_group(row_group_index).column(index_column).statistics
+            if statistics is None or not statistics.has_min_max:
+                raise ValueError(
+                    f"LeRobot parquet has no {index_column_name!r} statistics: {path}"
+                )
+            minima.append(int(statistics.min))
+            maxima.append(int(statistics.max))
+        file_start = min(minima)
+        file_end = max(maxima) + 1
+        if file_start != expected_index or file_end != file_start + rows:
+            raise ValueError(
+                f"LeRobot parquet {index_column_name!r} values are not globally contiguous: "
+                f"path={path} range={file_start}:{file_end} expected={expected_index}:{expected_index + rows}"
+            )
+        expected_index = file_end
+        if file_start < index_end and file_end > index_start:
+            if selected_offset is None:
+                selected_offset = file_start
+            selected.append(path)
+            covered_end = file_end
+    if not selected or selected_offset is None:
+        raise ValueError(
+            f"No LeRobot parquet intersects {index_column_name} range {index_start}:{index_end}"
+        )
+    if selected_offset > index_start or covered_end < index_end:
+        raise ValueError(
+            f"LeRobot parquets do not cover the requested {index_column_name} range: "
+            f"files={selected_offset}:{covered_end} requested={index_start}:{index_end}"
+        )
+    return selected, selected_offset
 
 
 class LeRobotG1MotionDataset(Dataset):
@@ -160,13 +222,23 @@ class LeRobotG1MotionDataset(Dataset):
         if self.use_human_motion and "omg.humanref.motion" not in info["features"]:
             raise ValueError("use_human_motion=true but LeRobot dataset has no `omg.humanref.motion`")
 
-        HFDataset, _ = _load_dataset_runtime()
+        HFDataset, _, _ = _load_dataset_runtime()
         data_files = sorted((self.dataset_root / "data").glob("chunk-*/*.parquet"))
         episode_files = sorted((self.dataset_root / "meta" / "episodes").glob("chunk-*/*.parquet"))
         if not data_files or not episode_files:
             raise FileNotFoundError(f"Incomplete LeRobot v3 dataset under {self.dataset_root}")
-        self.frame_dataset = HFDataset.from_parquet([str(path) for path in data_files])
-        self.episode_dataset = HFDataset.from_parquet([str(path) for path in episode_files])
+        split_ranges = info.get("splits", {})
+        if self.split not in split_ranges:
+            raise ValueError(f"Split {self.split!r} not found in LeRobot metadata")
+        split_episode_start, split_episode_end = _parse_split_range(split_ranges[self.split])
+        selected_episode_files, _ = _select_parquet_files_for_index_range(
+            episode_files,
+            index_column_name="episode_index",
+            index_start=split_episode_start,
+            index_end=split_episode_end,
+        )
+        self.episode_data_files = tuple(selected_episode_files)
+        self.episode_dataset = HFDataset.from_parquet([str(path) for path in selected_episode_files])
 
         self.kinematics = G1Kinematics(kinematics_path=kinematics_path)
         self.codec = G1MotionFeatureCodec(
@@ -176,6 +248,16 @@ class LeRobotG1MotionDataset(Dataset):
             rotation_representation=rotation_representation,
         )
         self.episodes = self._load_episodes(info)
+        split_frame_start = min(int(episode["data_start_row"]) for episode in self.episodes)
+        split_frame_end = max(int(episode["data_end_row"]) for episode in self.episodes)
+        selected_data_files, self.frame_dataset_offset = _select_parquet_files_for_index_range(
+            data_files,
+            index_column_name="index",
+            index_start=split_frame_start,
+            index_end=split_frame_end,
+        )
+        self.frame_data_files = tuple(selected_data_files)
+        self.frame_dataset = HFDataset.from_parquet([str(path) for path in selected_data_files])
         if self.training and is_exhaustive_train_window_policy(self.train_window_policy):
             self.samples = ExhaustiveWindowSampleView(
                 self.episodes,
@@ -193,6 +275,8 @@ class LeRobotG1MotionDataset(Dataset):
         print(
             f"[INFO] LeRobotG1MotionDataset repo_id={self.repo_id} root={self.dataset_root} "
             f"split={self.split} episodes={len(self.episodes)} samples={len(self.samples)} "
+            f"frame_files={len(self.frame_data_files)}/{len(data_files)} "
+            f"episode_files={len(self.episode_data_files)}/{len(episode_files)} "
             f"train_window_policy={self.train_window_policy} train_window_stride={self.train_window_stride}"
         )
 
@@ -273,8 +357,13 @@ class LeRobotG1MotionDataset(Dataset):
         episode_index = int(sample["episode_index"])
         if self._cached_episode_index == episode_index and self._cached_episode_data is not None:
             return self._cached_episode_data
-        start = int(sample["data_start_row"])
-        end = int(sample["data_end_row"])
+        start = int(sample["data_start_row"]) - self.frame_dataset_offset
+        end = int(sample["data_end_row"]) - self.frame_dataset_offset
+        if start < 0 or end > len(self.frame_dataset) or end <= start:
+            raise IndexError(
+                "Episode frame interval is outside the loaded LeRobot split shards: "
+                f"episode={episode_index} local={start}:{end} loaded=0:{len(self.frame_dataset)}"
+            )
         columns = ["observation.state"]
         if self.use_audio:
             columns.extend(("omg.audio.feature", "omg.condition.has_audio"))
