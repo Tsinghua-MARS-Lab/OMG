@@ -47,7 +47,7 @@ export OMG_T5_3B_MODEL=models/t5-3b-local
 The validated release manifests are committed at:
 
 ```text
-benchmark/samples/mixed_modalities_all_v2/
+assets/benchmarks/mixed_modalities_all_v2/
 ```
 
 Use these files for paper/release comparisons. To intentionally define a new
@@ -71,7 +71,7 @@ cohorts, 5 audio cohorts, and 11 human-reference cohorts) while resolving each
 selected row to its canonical LeRobot source dataset.
 
 Use the committed manifest as input to benchmark runners, for example with
-`--samples_path benchmark/samples/mixed_modalities_all_v2/text_test_1024.jsonl`.
+`--samples_path assets/benchmarks/mixed_modalities_all_v2/text_test_1024.jsonl`.
 Dataset names passed through
 `--datasets` are exact values from the `omg/dataset` episode column.
 External baseline reproduction scripts live on the `repro/baselines` branch;

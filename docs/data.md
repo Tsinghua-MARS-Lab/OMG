@@ -112,7 +112,7 @@ The runner resolves that complete identity against LeRobot metadata and fails
 if any field disagrees. Local list indices, private filesystem paths, and the
 removed `.npz + labels + info.yaml` layout are not valid benchmark identities.
 The validated release set lives at
-`benchmark/samples/mixed_modalities_all_v2`; its summary records the data
+`assets/benchmarks/mixed_modalities_all_v2`; its summary records the data
 revision, manifest hashes, cohort counts, and frame-level validation outcome.
 
 Prepare all three benchmark cohorts with:

@@ -277,7 +277,7 @@ models/evaluator/pretrained.ckpt
 ```
 
 The validated release manifests are versioned under
-`benchmark/samples/mixed_modalities_all_v2`. Regenerate them from the pinned
+`assets/benchmarks/mixed_modalities_all_v2`. Regenerate them from the pinned
 dataset only when intentionally defining a new benchmark release:
 
 ```bash
@@ -293,7 +293,7 @@ PYTHONPATH=src python -m omg.cli.generation.benchmark text \
   --exp 50m \
   --ckpt_path outputs/50m_release_train/checkpoints/last.ckpt \
   --evaluator_checkpoint models/evaluator/pretrained.ckpt \
-  --samples_path benchmark/samples/mixed_modalities_all_v2/text_test_1024.jsonl \
+  --samples_path assets/benchmarks/mixed_modalities_all_v2/text_test_1024.jsonl \
   --output_dir outputs/benchmarks/50m_text
 ```
 
