@@ -154,7 +154,7 @@ def test_benchmark_cohorts_preserve_release_protocol():
 
 
 def test_committed_v2_benchmark_manifests_match_release_summary():
-    root = Path(__file__).resolve().parents[2] / "benchmark" / "samples" / "mixed_modalities_all_v2"
+    root = Path(__file__).resolve().parents[2] / "assets" / "benchmarks" / "mixed_modalities_all_v2"
     summary = json.loads((root / "manifest_summary.json").read_text(encoding="utf-8"))
     assert summary["sample_schema"] == "omg.benchmark.sample.v2"
     assert summary["revision"] == "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7"
