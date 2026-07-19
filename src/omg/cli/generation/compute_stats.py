@@ -13,7 +13,6 @@ from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
-from omg.data.materialized_format import DEFAULT_TRAIN_TENSOR_KEYS
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -26,17 +25,8 @@ def _resolve_dataset_cfg(cfg: dict[str, Any], representation: dict[str, Any], pa
     OmegaConf.resolve(root)
     resolved = OmegaConf.to_container(root.dataset, resolve=True)
     target = str(resolved.get("_target_", ""))
-    if target in {
-        "omg.data.g1_motion.G1MotionDataset",
-        "omg.data.lerobot_dataset.LeRobotG1MotionDataset",
-    }:
+    if target == "omg.data.lerobot_dataset.LeRobotG1MotionDataset":
         resolved.setdefault("rotation_representation", representation.get("rotation_representation", "quat"))
-    elif target == "omg.data.materialized.MaterializedG1MotionDataset":
-        tensor_keys = list(resolved.get("tensor_keys") or DEFAULT_TRAIN_TENSOR_KEYS)
-        for key in ("motion_features", "qpos_36"):
-            if key not in tensor_keys:
-                tensor_keys.append(key)
-        resolved["tensor_keys"] = tensor_keys
     return resolved
 
 

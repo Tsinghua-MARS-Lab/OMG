@@ -27,7 +27,7 @@ from omg.benchmarks.runners.common import (
     SampleRecord,
     _build_datasets,
     _config_dir,
-    _dataset_filter_tokens_from_records,
+    _dataset_names_from_records,
     _device,
     _embedding_distribution_metrics,
     _encode_motion_embeddings,
@@ -37,6 +37,7 @@ from omg.benchmarks.runners.common import (
     _motion_for_evaluator,
     _physical_summary_from_values,
     _physical_values,
+    _resolve_sample_records,
     _save_json,
     _validate_sample_records,
     _write_jsonl,
@@ -107,16 +108,6 @@ def _validate_generated(arrays: dict[str, np.ndarray]) -> None:
             raise ValueError(f"generated {key} must have shape ({num_samples},), got {arrays[key].shape}")
 
 
-def _records_from_artifact(arrays: dict[str, np.ndarray]) -> list[SampleRecord]:
-    datasets = [str(value) for value in arrays["dataset"].tolist()]
-    indices = [int(value) for value in arrays["dataset_index"].tolist()]
-    captions = [str(value) for value in arrays["captions"].tolist()]
-    return [
-        SampleRecord(dataset=dataset, index=index, global_index=None, caption=caption)
-        for dataset, index, caption in zip(datasets, indices, captions)
-    ]
-
-
 def _assert_records_match_artifact(records: list[SampleRecord], arrays: dict[str, np.ndarray]) -> None:
     if len(records) != int(arrays["qpos_36"].shape[0]):
         raise ValueError(f"sample count mismatch: {len(records)} records vs {arrays['qpos_36'].shape[0]} generated")
@@ -176,57 +167,6 @@ def _load_reference_artifact(path: str | Path, num_samples: int) -> tuple[np.nda
         valid = np.ones(qpos.shape[:2], dtype=np.bool_)
     return qpos, valid, fps
 
-
-
-def _records_have_source_windows(records: list[SampleRecord]) -> bool:
-    for record in records:
-        meta = record.meta or {}
-        if not meta.get("source_file") or meta.get("window_start") is None:
-            return False
-    return True
-
-
-def _collect_reference_from_sample_meta(records: list[SampleRecord], frames: int) -> dict[str, Any]:
-    reference_chunks = []
-    valid_chunks = []
-    fps_values = []
-    for idx, record in enumerate(records):
-        meta = record.meta or {}
-        source_file = Path(str(meta["source_file"]))
-        window_start = int(meta["window_start"])
-        if not source_file.exists():
-            raise FileNotFoundError(f"sample[{idx}] source_file does not exist: {source_file}")
-        with np.load(source_file, allow_pickle=False) as data:
-            if "qpos" not in data.files:
-                raise KeyError(f"sample[{idx}] source_file missing qpos: {source_file}")
-            qpos = np.asarray(data["qpos"], dtype=np.float32)
-            fps = float(np.asarray(data["fps"]).reshape(())) if "fps" in data.files else float((record.meta or {}).get("fps", 30.0))
-        if qpos.ndim != 2 or qpos.shape[-1] != 36:
-            raise ValueError(f"sample[{idx}] source qpos must have shape (T,36), got {qpos.shape}: {source_file}")
-        window = qpos[window_start : window_start + int(frames)]
-        if window.ndim != 2 or window.shape[-1] != 36:
-            raise ValueError(
-                f"sample[{idx}] source window shape {window.shape}, expected (*,36); "
-                f"source={source_file} window_start={window_start}"
-            )
-        if not np.isfinite(window).all():
-            raise ValueError(f"sample[{idx}] source qpos contains non-finite values: {source_file}")
-        valid = torch.zeros((int(frames),), dtype=torch.bool)
-        length = min(int(window.shape[0]), int(frames))
-        if length <= 0:
-            raise ValueError(f"sample[{idx}] source window is empty: {source_file} window_start={window_start}")
-        valid_window = window[:length].astype(np.float32, copy=False)
-        padded = np.repeat(valid_window[-1:,:], int(frames), axis=0).astype(np.float32, copy=False)
-        padded[:length] = valid_window
-        valid[:length] = True
-        reference_chunks.append(torch.from_numpy(padded))
-        valid_chunks.append(valid)
-        fps_values.append(float(fps))
-    return {
-        "reference_qpos": torch.stack(reference_chunks, dim=0),
-        "reference_valid": torch.stack(valid_chunks, dim=0),
-        "fps": torch.tensor(fps_values, dtype=torch.float32),
-    }
 
 
 def _collect_reference_from_datasets(
@@ -626,9 +566,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mode", choices=["text", "audio", "humanref"], required=True)
     parser.add_argument("--generated_qpos", required=True)
     parser.add_argument("--reference_qpos", default=None)
-    parser.add_argument("--samples_path", default=None)
+    parser.add_argument(
+        "--samples_path",
+        required=True,
+        help="Pinned omg.benchmark.sample.v2 manifest matching generated_qpos order.",
+    )
     parser.add_argument("--exp", required=True)
-    parser.add_argument("--data", default="omg_data")
+    parser.add_argument("--data", default="omg_data_lerobot_omnimodal")
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--split", choices=["val", "test"], default="test")
     parser.add_argument("--datasets", nargs="+", default=None)
@@ -689,22 +633,20 @@ def main(argv: list[str] | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated_arrays = _load_npz(args.generated_qpos)
     _validate_generated(generated_arrays)
-    records = _load_sample_records(Path(args.samples_path)) if args.samples_path is not None else _records_from_artifact(generated_arrays)
-    _assert_records_match_artifact(records, generated_arrays)
+    records = _load_sample_records(Path(args.samples_path))
     cfg = _compose_cfg(args)
-    can_collect_reference_from_meta = (
-        args.reference_qpos is None
-        and args.mode in {"text", "humanref"}
-        and args.samples_path is not None
-        and _records_have_source_windows(records)
+    include_datasets = args.datasets
+    if include_datasets is None:
+        include_datasets = _dataset_names_from_records(records)
+    datasets = _build_datasets(
+        cfg,
+        args.split,
+        include=include_datasets,
+        num_frames=args.num_frames,
     )
-    datasets = None
-    if (args.reference_qpos is None and not can_collect_reference_from_meta) or args.mode == "audio" or (args.samples_path is not None and not can_collect_reference_from_meta):
-        include_datasets = args.datasets
-        if include_datasets is None:
-            include_datasets = _dataset_filter_tokens_from_records(records)
-        datasets = _build_datasets(cfg, args.split, include=include_datasets)
-        _validate_sample_records(records, datasets)
+    records = _resolve_sample_records(records, datasets)
+    _validate_sample_records(records, datasets)
+    _assert_records_match_artifact(records, generated_arrays)
     reference_np = valid_np = reference_fps_np = None
     if args.reference_qpos is not None:
         reference_np, valid_np, reference_fps_np = _load_reference_artifact(args.reference_qpos, num_samples=len(records))
@@ -717,18 +659,19 @@ def main(argv: list[str] | None = None) -> None:
         "dataset_indices": [int(value) for value in generated_arrays["dataset_index"].tolist()],
     }
     if reference_np is None:
-        if can_collect_reference_from_meta:
-            payload.update(_collect_reference_from_sample_meta(records=records, frames=frames))
-        else:
-            if datasets is None:
-                raise ValueError("reference_qpos is required when datasets are not loaded")
-            payload.update(_collect_reference_from_datasets(datasets=datasets, records=records, frames=frames, batch_size=args.batch_size, mode=args.mode))
+        payload.update(
+            _collect_reference_from_datasets(
+                datasets=datasets,
+                records=records,
+                frames=frames,
+                batch_size=args.batch_size,
+                mode=args.mode,
+            )
+        )
     else:
         payload["reference_qpos"] = torch.from_numpy(np.asarray(reference_np[:, :frames], dtype=np.float32))
         payload["reference_valid"] = torch.from_numpy(np.asarray(valid_np[:, :frames], dtype=np.bool_))
         if args.mode in {"audio", "humanref"}:
-            if datasets is None:
-                raise ValueError(f"{args.mode} artifact benchmark needs samples_path/datasets to load condition/reference features")
             condition_payload = _collect_reference_from_datasets(
                 datasets=datasets,
                 records=records,
@@ -745,8 +688,7 @@ def main(argv: list[str] | None = None) -> None:
         {"sample_index": idx, "dataset": payload["dataset_names"][idx], "dataset_index": int(payload["dataset_indices"][idx]), "caption": payload["captions"][idx]}
         for idx in range(len(payload["captions"]))
     ])
-    if datasets is not None:
-        _write_sample_records(output_dir / "samples.jsonl", records, datasets)
+    _write_sample_records(output_dir / "samples.jsonl", records, datasets)
     np.savez_compressed(output_dir / "generated_qpos.npz", qpos_36=payload["generated_qpos"].numpy().astype(np.float32), fps=payload["fps"].numpy().astype(np.float32), captions=np.asarray(payload["captions"], dtype=np.str_), dataset=np.asarray(payload["dataset_names"], dtype=np.str_), dataset_index=np.asarray(payload["dataset_indices"], dtype=np.int32), source_generated_qpos=np.asarray([str(Path(args.generated_qpos).resolve())], dtype=np.str_))
     np.savez_compressed(output_dir / "reference_qpos.npz", qpos_36=payload["reference_qpos"].numpy().astype(np.float32), valid=payload["reference_valid"].numpy().astype(np.bool_), fps=(reference_fps_np.astype(np.float32) if reference_fps_np is not None else payload["fps"].numpy().astype(np.float32)), captions=np.asarray(payload["captions"], dtype=np.str_), dataset=np.asarray(payload["dataset_names"], dtype=np.str_), dataset_index=np.asarray(payload["dataset_indices"], dtype=np.int32))
     model = _metric_model(cfg, device)

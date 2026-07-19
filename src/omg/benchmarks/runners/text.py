@@ -29,7 +29,7 @@ from omg.benchmarks.runners.common import (
     _cfg_output_name,
     _cfg_scale_json,
     _config_dir,
-    _dataset_filter_tokens_from_records,
+    _dataset_names_from_records,
     _dataset_indices,
     _device,
     _embedding_distribution_metrics,
@@ -43,6 +43,7 @@ from omg.benchmarks.runners.common import (
     _physical_summary_from_values,
     _physical_values,
     _qpos_to_body_positions,
+    _resolve_sample_records,
     _sample_file_path,
     _save_json,
     _summary_stats,
@@ -690,7 +691,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ckpt_path", default=None)
     parser.add_argument("--ckpts", nargs="+", default=None)
     parser.add_argument("--exp", required=True)
-    parser.add_argument("--data", default="omg_data")
+    parser.add_argument("--data", default="omg_data_lerobot_omnimodal")
     parser.add_argument("--output_dir", default=None)
     parser.add_argument("--split", choices=["train", "val", "test"], default="test")
     parser.add_argument(
@@ -713,6 +714,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", "--batch_size", dest="batch_size", type=int, default=64)
     parser.add_argument("--datasets", nargs="+", default=None)
+    parser.add_argument(
+        "--reference-datasets",
+        nargs="+",
+        default=None,
+        help="Exact omg/dataset names for --reference-split. Required only when restricting a different split.",
+    )
     parser.add_argument("--num_frames", type=int, default=120)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cfg_scale", type=float, default=None)
@@ -1337,10 +1344,20 @@ def main(argv: list[str] | None = None) -> None:
         records = _load_sample_records(sample_path)
         print(f"[INFO] Loaded {len(records)} sample records from {sample_path.resolve()}")
     dataset_include = args.datasets if args.datasets is not None else (
-        _dataset_filter_tokens_from_records(records) if records is not None else None
+        _dataset_names_from_records(records) if records is not None else None
     )
-    datasets = _build_datasets(cfg, args.split, include=dataset_include)
-    reference_datasets = _build_datasets(cfg, args.reference_split, include=dataset_include)
+    datasets = _build_datasets(cfg, args.split, include=dataset_include, num_frames=args.num_frames)
+    reference_include = args.reference_datasets
+    if reference_include is None and args.reference_split == args.split:
+        reference_include = dataset_include
+    reference_datasets = _build_datasets(
+        cfg,
+        args.reference_split,
+        include=reference_include,
+        num_frames=args.num_frames,
+    )
+    if records is not None:
+        records = _resolve_sample_records(records, datasets)
     if records is None:
         records = _select_sample_records(datasets, args.num_texts, args.seed)
     reference_records = _select_sample_records(

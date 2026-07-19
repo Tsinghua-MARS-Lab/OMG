@@ -11,6 +11,18 @@ from omg.data.episode_cache import EpisodeCachedG1MotionDataset
 from omg.data.episode_cache_inspect import inspect_episode_cache
 from omg.cli.data.materialize_episode_cache import write_episode_cache
 
+SOURCE_REPO_ID = "THU-MARS/OMG-Data"
+SOURCE_REVISION = "test-revision"
+
+
+def _open_cache(root, split="train"):
+    return EpisodeCachedG1MotionDataset(
+        root=root,
+        split=split,
+        source_repo_id=SOURCE_REPO_ID,
+        source_revision=SOURCE_REVISION,
+    )
+
 
 def test_episode_cache_maps_exact_windows_and_spans(tmp_path) -> None:
     split_root = tmp_path / "cache" / "train"
@@ -38,6 +50,8 @@ def test_episode_cache_maps_exact_windows_and_spans(tmp_path) -> None:
         json.dumps(
             {
                 "format": EpisodeCachedG1MotionDataset.FORMAT,
+                "source_repo_id": SOURCE_REPO_ID,
+                "source_revision": SOURCE_REVISION,
                 "fps": 30.0,
                 "window_size": 3,
                 "num_prev_states": 2,
@@ -52,8 +66,19 @@ def test_episode_cache_maps_exact_windows_and_spans(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
+    (split_root / "source_identity.json").write_text(
+        json.dumps({"repo_id": SOURCE_REPO_ID, "revision": SOURCE_REVISION}),
+        encoding="utf-8",
+    )
 
-    dataset = EpisodeCachedG1MotionDataset(root=tmp_path / "cache", split="train")
+    dataset = _open_cache(tmp_path / "cache")
+    with pytest.raises(ValueError, match="identity mismatch"):
+        EpisodeCachedG1MotionDataset(
+            root=tmp_path / "cache",
+            split="train",
+            source_repo_id=SOURCE_REPO_ID,
+            source_revision="different-revision",
+        )
     assert len(dataset) == 4
     assert dataset.materialized_shard_spans() == [(0, 3), (3, 1)]
     assert dataset[0]["qpos_36"][:, 0].tolist() == [0.0, 1.0, 2.0]
@@ -76,6 +101,8 @@ def test_episode_cache_writer_publishes_atomically(tmp_path) -> None:
     body_quat[..., 0] = 1.0
 
     class FakeDataset:
+        repo_id = SOURCE_REPO_ID
+        revision = SOURCE_REVISION
         default_fps = 30.0
         window_size = 3
         num_prev_states = 2
@@ -109,7 +136,7 @@ def test_episode_cache_writer_publishes_atomically(tmp_path) -> None:
     assert summary["frames"] == 8
     assert summary["windows"] == 4
     assert not list(output_root.glob(".*.incomplete.*"))
-    dataset = EpisodeCachedG1MotionDataset(root=output_root, split="train")
+    dataset = _open_cache(output_root)
     assert dataset[2]["qpos_36"][:, 0].tolist() == [2.0, 3.0, 4.0]
     report = inspect_episode_cache(output_root, "train")
     assert report["valid"] is True
@@ -137,6 +164,8 @@ def test_episode_cache_writer_publishes_atomically(tmp_path) -> None:
 
 def test_episode_cache_writer_resumes_completed_shards(tmp_path) -> None:
     class ResumableDataset:
+        repo_id = SOURCE_REPO_ID
+        revision = SOURCE_REVISION
         default_fps = 30.0
         window_size = 3
         num_prev_states = 2
@@ -191,5 +220,5 @@ def test_episode_cache_writer_resumes_completed_shards(tmp_path) -> None:
     )
     assert summary["episodes"] == 2
     assert summary["shards"] == 2
-    dataset = EpisodeCachedG1MotionDataset(root=output_root, split="train")
+    dataset = _open_cache(output_root)
     assert dataset[1]["qpos_36"][:, 0].tolist() == [3.0, 4.0, 5.0]

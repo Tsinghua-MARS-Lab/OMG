@@ -28,13 +28,14 @@ from omg.benchmarks.runners.common import (
     _cfg_scale_json,
     _config_dir,
     _dataset_indices,
-    _dataset_filter_tokens_from_records,
+    _dataset_names_from_records,
     _device,
     _finite_metrics,
     _load_sample_records,
     _parse_cfg_scale_value,
     _physical_summary_from_values,
     _physical_values,
+    _resolve_sample_records,
     _sample_file_path,
     _save_json,
     _validate_sample_records,
@@ -65,7 +66,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ckpt_path", default=None)
     parser.add_argument("--ckpts", nargs="+", default=None)
     parser.add_argument("--exp", required=True)
-    parser.add_argument("--data", default="omg_data")
+    parser.add_argument("--data", default="omg_data_lerobot_omnimodal")
     parser.add_argument("--output_dir", default=None)
     parser.add_argument("--split", choices=["val", "test"], default="test")
     parser.add_argument("--num_samples", type=int, default=512)
@@ -633,18 +634,18 @@ def main(argv: list[str] | None = None) -> None:
         records = _load_sample_records(sample_path)
         print(f"[INFO] Loaded {len(records)} sample records from {sample_path.resolve()}")
     dataset_include = args.datasets if args.datasets is not None else (
-        _dataset_filter_tokens_from_records(records) if records is not None else None
+        _dataset_names_from_records(records) if records is not None else None
     )
-    datasets = _build_datasets(cfg, args.split, include=dataset_include)
+    datasets = _build_datasets(cfg, args.split, include=dataset_include, num_frames=args.num_frames)
+    if records is not None:
+        records = _resolve_sample_records(records, datasets)
     if records is None:
         records = select_condition_records(
             datasets,
             num_samples=args.num_samples,
             seed=args.seed,
             num_frames=args.num_frames,
-            tensor_key="audio_features",
-            mask_key="has_audio",
-            label="audio",
+            condition="audio",
         )
     _validate_sample_records(records, datasets)
     _write_sample_records(root_output_dir / "samples.jsonl", records, datasets)

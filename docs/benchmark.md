@@ -44,14 +44,23 @@ export OMG_T5_3B_MODEL=models/t5-3b-local
 
 ## Sample Preparation
 
-Prepare benchmark samples with:
+Prepare benchmark samples from the pinned public LeRobotDataset v3 release:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
-  --output_dir outputs_benchmark/samples
+  --data omg_data_lerobot_omnimodal \
+  --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
 ```
 
-Use the generated manifest as input to artifact benchmark runners.
+The generated `omg.benchmark.sample.v2` rows contain the repository revision,
+split, episode, exact window, and source identity. Runners resolve every field
+against LeRobot metadata and reject stale or mismatched manifests. The same
+fixed rows can therefore be shared by checkpoint and artifact evaluations
+without relying on machine-local indices or private source paths.
+
+Use the generated manifest as input to benchmark runners, for example with
+`--samples_path .../text_test_1024.jsonl`. Dataset names passed through
+`--datasets` are exact values from the `omg/dataset` episode column.
 External baseline reproduction scripts live on the `repro/baselines` branch;
 `main` keeps the benchmark artifact interface only.
 

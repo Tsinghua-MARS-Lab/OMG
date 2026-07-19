@@ -7,5 +7,5 @@ export PYTHONPATH="src:${PYTHONPATH:-}"
   --data-config configs/generation/data/omg_data_lerobot.yaml \
   --representation-config configs/generation/representation/125d.yaml \
   --paths-config configs/generation/paths/default.yaml \
-  --output-root "${OMG_MATERIALIZED_ROOT:?set OMG_MATERIALIZED_ROOT}/omg_episode_cache_rot6d_seq60_hist10_k1" \
+  --output-root "${OMG_MATERIALIZED_ROOT:?set OMG_MATERIALIZED_ROOT}/omg_episode_cache_v2_rot6d_seq60_hist10_k1" \
   "$@"

@@ -12,8 +12,8 @@ from omg.benchmarks.runners.common import (
     _load_sample_records,
     _motion_input_dim,
     _parse_cfg_scale_value,
+    _resolve_sample_records,
     _write_sample_records,
-    item_has_condition,
     select_condition_records,
 )
 from omg.benchmarks.metrics import multimodality
@@ -36,6 +36,30 @@ class DummyDataset:
 
     def __getitem__(self, index: int):
         return {"caption": f"{self.prefix}-{index}", "meta": {"index": index}}
+
+
+class StableDummyDataset(DummyDataset):
+    def sample_identity(self, index: int):
+        return {
+            "schema": "omg.benchmark.sample.v2",
+            "repo_id": "THU-MARS/OMG-Data",
+            "revision": "test-revision",
+            "split": "test",
+            "episode_index": 100 + int(index),
+            "window_start": 0,
+            "num_frames": 60,
+            "source_dataset": self.prefix,
+            "source_id": f"source-{index}",
+            "segment_index": 0,
+            "source_start_frame": 0,
+            "source_end_frame": 60,
+        }
+
+    def resolve_identity(self, identity):
+        index = int(identity["episode_index"]) - 100
+        expected = self.sample_identity(index)
+        assert identity == expected
+        return index
 
 
 class DummyEpisodeWindowDataset:
@@ -70,49 +94,50 @@ class DummyConditionDataset:
             "mask": {"has_audio": torch.tensor(valid, dtype=torch.bool)},
         }
 
+    def sample_has_condition(self, index: int, condition: str, *, num_frames: int):
+        assert condition == "audio"
+        valid = self.masks[index]
+        return len(valid) >= num_frames and all(valid[:num_frames])
 
-def test_omg_data_config_defines_text_test_datasets():
+    def global_index(self, index: int):
+        return index
+
+
+def test_lerobot_config_pins_public_dataset_revision():
     config_dir = str(Path(__file__).resolve().parents[2] / "configs" / "generation")
     with initialize_config_dir(version_base="1.3", config_dir=config_dir):
         cfg = compose(
             config_name="train",
-            overrides=["data=omg_data", "logger=none", "trainer=1gpu"],
-        )
-    names = set(cfg.data.dataset_opts.test.keys())
-    assert "100style_original_filtered_test" in names
-    assert "amass_original_filtered_test" in names
-    assert "humanml_original_filtered_test" in names
-    assert "lafan1_original_filtered_test" in names
-    assert "omomo_original_filtered_test" in names
-
-
-def test_omg_data_config_defines_conditioned_test_datasets():
-    config_dir = str(Path(__file__).resolve().parents[2] / "configs" / "generation")
-    with initialize_config_dir(version_base="1.3", config_dir=config_dir):
-        cfg = compose(
-            config_name="train",
-            overrides=["data=omg_data", "logger=none", "trainer=1gpu"],
+            overrides=["data=omg_data_lerobot", "logger=none", "trainer=1gpu"],
         )
     test_opts = cfg.data.dataset_opts.test
-    audio_names = {name for name, dataset_cfg in test_opts.items() if bool(dataset_cfg.get("use_audio", False))}
-    humanref_names = {name for name, dataset_cfg in test_opts.items() if bool(dataset_cfg.get("use_human_motion", False))}
-    assert {"aistpp_original_audio_test", "finedance_original_audio_test"} <= audio_names
-    assert {"beat2_original_humanref_test"} <= humanref_names
+    assert list(test_opts) == ["omg_lerobot_test"]
+    dataset_cfg = test_opts.omg_lerobot_test
+    assert dataset_cfg.repo_id == "THU-MARS/OMG-Data"
+    assert dataset_cfg.revision == "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7"
+
+
+def test_lerobot_omnimodal_config_enables_all_conditions():
+    config_dir = str(Path(__file__).resolve().parents[2] / "configs" / "generation")
+    with initialize_config_dir(version_base="1.3", config_dir=config_dir):
+        cfg = compose(
+            config_name="train",
+            overrides=["data=omg_data_lerobot_omnimodal", "logger=none", "trainer=1gpu"],
+        )
+    dataset_cfg = cfg.data.dataset_opts.test.omg_lerobot_omnimodal_test
+    assert dataset_cfg.use_text is True
+    assert dataset_cfg.use_audio is True
+    assert dataset_cfg.use_human_motion is True
 
 
 def test_select_condition_records_requires_full_condition_window():
     datasets = {"audio": DummyConditionDataset([[True, True, True], [True, False, True], [True, True]])}
-    assert item_has_condition(datasets["audio"][0], tensor_key="audio_features", mask_key="has_audio", num_frames=3)
-    assert not item_has_condition(datasets["audio"][1], tensor_key="audio_features", mask_key="has_audio", num_frames=3)
-    assert not item_has_condition(datasets["audio"][2], tensor_key="audio_features", mask_key="has_audio", num_frames=3)
     records = select_condition_records(
         datasets,
         num_samples=1,
         seed=0,
         num_frames=3,
-        tensor_key="audio_features",
-        mask_key="has_audio",
-        label="audio",
+        condition="audio",
     )
     assert records == [SampleRecord(dataset="audio", index=0, global_index=0)]
 
@@ -156,15 +181,17 @@ def test_select_sample_records_uses_exact_episode_window_spans():
 
 
 def test_sample_records_round_trip(tmp_path):
-    datasets = {"a": DummyDataset(2, "a")}
+    datasets = {"a": StableDummyDataset(2, "a")}
     records = [SampleRecord(dataset="a", index=1, global_index=1)]
     path = tmp_path / "samples.jsonl"
     _write_sample_records(path, records, datasets)
     loaded = _load_sample_records(path)
     assert loaded[0].dataset == "a"
-    assert loaded[0].index == 1
+    assert loaded[0].index is None
     assert loaded[0].caption == "a-1"
     assert loaded[0].meta == {"index": 1}
+    resolved = _resolve_sample_records(loaded, datasets)
+    assert resolved[0].index == 1
 
 
 def test_motion_input_dim_accepts_evaluator_pose_keys():

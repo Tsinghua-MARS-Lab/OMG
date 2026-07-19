@@ -115,8 +115,9 @@ preserving the exact exhaustive stride-1 window set without duplicating
 overlapping window tensors.
 
 
-You can download precomputed [materialized OMG-Data](https://huggingface.co/datasets/THU-MARS/OMG-Data-Materialized) into `OMG_MATERIALIZED_ROOT`, or generate the
-same layout locally from source OMG-Data:
+Generate the cache locally from the pinned source OMG-Data revision. A
+precomputed cache is valid only when its v2 source identity matches the active
+config exactly:
 
 ```bash
 scripts/materialize_omg_data.sh --overwrite
@@ -126,8 +127,11 @@ Validate every manifest, episode index, and frame tensor before use:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.data.validate_episode_cache \
-  "$OMG_MATERIALIZED_ROOT/omg_episode_cache_rot6d_seq60_hist10_k1"
+  "$OMG_MATERIALIZED_ROOT/omg_episode_cache_v2_rot6d_seq60_hist10_k1"
 ```
+
+Episode cache v2 pins the originating LeRobot repository revision. Unpinned v1
+caches must be rebuilt; they are not accepted as release training input.
 
 Train with materialized data by using:
 

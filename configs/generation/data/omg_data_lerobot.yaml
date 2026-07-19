@@ -9,6 +9,7 @@ dataset_opts:
       _target_: omg.data.lerobot_dataset.LeRobotG1MotionDataset
       dataset_root: ${paths.data_root}
       repo_id: THU-MARS/OMG-Data
+      revision: 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7
       sequence_duration: 2.0
       num_prev_states: ${representation.num_prev_states}
       canonical_frame_idx: ${representation.canonical_frame_idx}

@@ -12,9 +12,8 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _default_datasets_root() -> Path:
-    data_root = Path(os.environ.get("OMG_DATA_ROOT", "data/OMG-Data"))
-    return Path(os.environ.get("OMG_DATASETS_ROOT", str(data_root / "datasets")))
+def _default_dataset_root() -> Path:
+    return Path(os.environ.get("OMG_DATA_ROOT", "data/OMG-Data"))
 
 
 def _command(args: argparse.Namespace) -> list[str]:
@@ -87,8 +86,8 @@ def main() -> int:
     parser.add_argument("--output-dir", dest="output_dir", default="outputs/sanity/generation_benchmark")
     parser.add_argument(
         "--dataset-root",
-        default=str(_default_datasets_root()),
-        help="Expected datasets root for logging. The benchmark Hydra config remains authoritative.",
+        default=str(_default_dataset_root()),
+        help="Expected LeRobot v3 dataset root for logging. The benchmark Hydra config remains authoritative.",
     )
     parser.add_argument("--split", choices=["val", "test"], default="test")
     parser.add_argument("--datasets", nargs="+", default=None)
@@ -114,7 +113,7 @@ def main() -> int:
     cmd = _command(args)
     print("[INFO] Benchmark sanity command")
     print(f"[INFO] repo_root={root}")
-    print(f"[INFO] expected_datasets_root={args.dataset_root}")
+    print(f"[INFO] expected_lerobot_root={args.dataset_root}")
     print("[INFO] " + " ".join(str(part) for part in cmd))
     if not args.run:
         print("[INFO] dry_run=true; pass --run to execute on the remote machine")

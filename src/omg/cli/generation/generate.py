@@ -22,9 +22,7 @@ def _config_dir() -> Path:
 
 
 def _load_text(args: argparse.Namespace) -> str:
-    if args.labels_json is not None:
-        text, _, _ = _load_labels_json_condition(args.labels_json, num_frames=None, fps=args.fps)
-    elif args.text is not None:
+    if args.text is not None:
         text = args.text.strip()
     elif args.text_file is not None:
         text = Path(args.text_file).read_text(encoding="utf-8").strip()
@@ -135,109 +133,6 @@ def _pad_or_trim_feature(features: torch.Tensor, num_frames: int) -> tuple[torch
     valid = torch.zeros(num_frames, dtype=torch.bool)
     valid[:valid_frames] = True
     return torch.cat([features, pad], dim=0), valid, valid_frames
-
-
-def _pad_or_trim_array(array: np.ndarray, num_frames: int) -> np.ndarray:
-    array = np.asarray(array, dtype=np.float32)
-    num_frames = int(num_frames)
-    if array.shape[0] >= num_frames:
-        return array[:num_frames]
-    if array.shape[0] <= 0:
-        raise ValueError("Array must contain at least one frame")
-    pad = np.repeat(array[-1:], num_frames - array.shape[0], axis=0)
-    return np.concatenate([array, pad], axis=0)
-
-
-def _first_label_action(label_data: dict) -> tuple[str, dict]:
-    for list_key in ("segments", "actions"):
-        segments = label_data.get(list_key, [])
-        if isinstance(segments, list) and segments:
-            segment = dict(segments[0] or {})
-            action = str(segment.get("action", segment.get("caption", segment.get("text", "")))).strip()
-            if action:
-                return action, segment
-    for key in ("action", "caption", "text", "summary", "video_summary"):
-        value = str(label_data.get(key, "")).strip()
-        if value:
-            return value, {}
-    raise ValueError("labels_json does not contain a usable action/caption/text")
-
-
-def _segment_start_frame(segment: dict, fps: float) -> int:
-    if "start_frame" in segment or "start frame" in segment:
-        return max(0, int(segment.get("start_frame", segment.get("start frame", 0)) or 0))
-    start_time = float(segment.get("start_time", segment.get("start time", 0.0)) or 0.0)
-    return max(0, int(round(start_time * float(fps))))
-
-
-def _resolve_gt_motion_from_label(label_path: Path) -> Path:
-    candidates: list[Path] = []
-    parts = list(label_path.parts)
-    for idx, part in enumerate(parts):
-        if part in {"labels", "text"}:
-            replaced = Path(*parts[:idx], "g1", *parts[idx + 1 :]).with_suffix(".npz")
-            candidates.append(replaced)
-    dataset_dir = label_path.parent.parent if label_path.parent.name in {"labels", "text"} else label_path.parent
-    candidates.extend(
-        [
-            dataset_dir / "g1" / f"{label_path.stem}.npz",
-            dataset_dir / "g1" / f"{label_path.stem}_retarget.npz",
-            label_path.with_suffix(".npz"),
-        ]
-    )
-    existing = []
-    seen = set()
-    for candidate in candidates:
-        if candidate.exists():
-            key = str(candidate.resolve())
-            if key not in seen:
-                existing.append(candidate.resolve())
-                seen.add(key)
-    if len(existing) > 1:
-        raise ValueError("Ambiguous GT motion files for labels_json: " + ", ".join(str(path) for path in existing))
-    if not existing:
-        raise FileNotFoundError(
-            "Could not find GT motion npz for labels_json. Tried paths like "
-            f"{dataset_dir / 'g1' / (label_path.stem + '.npz')}"
-        )
-    return existing[0]
-
-
-def _load_labels_json_condition(
-    labels_json: str | Path,
-    *,
-    num_frames: int | None,
-    fps: float,
-) -> tuple[str, np.ndarray | None, dict]:
-    label_path = Path(labels_json)
-    if not label_path.exists():
-        raise FileNotFoundError(f"labels_json does not exist: {label_path}")
-    with label_path.open("r", encoding="utf-8") as f:
-        label_data = json.load(f)
-    text, segment = _first_label_action(label_data)
-    motion_path = _resolve_gt_motion_from_label(label_path)
-    gt_qpos = None
-    start = _segment_start_frame(segment, fps)
-    with np.load(motion_path) as npz:
-        if "qpos" in npz:
-            qpos = np.asarray(npz["qpos"], dtype=np.float32)
-        elif "qpos_36" in npz:
-            qpos = np.asarray(npz["qpos_36"], dtype=np.float32)
-        else:
-            raise KeyError(f"GT motion file has no qpos/qpos_36 key: {motion_path}")
-        source_fps = float(np.asarray(npz["fps"]).reshape(-1)[0]) if "fps" in npz else float(fps)
-    available_frames = max(0, int(qpos.shape[0]) - int(start))
-    if num_frames is not None:
-        gt_qpos = _pad_or_trim_array(qpos[start:], int(num_frames))
-    meta = {
-        "label_path": str(label_path.resolve()),
-        "source_file": str(motion_path.resolve()),
-        "window_start": int(start),
-        "available_frames": int(available_frames),
-        "fps": float(source_fps),
-        "segment": segment,
-    }
-    return text, gt_qpos, meta
 
 
 def _load_music_feature(path: str | Path, *, audio_dim: int, num_frames: int, start_frame: int = 0) -> tuple[torch.Tensor, torch.Tensor, int | None]:
@@ -397,8 +292,6 @@ def _encode_raw_music(
 def _load_music(
     args: argparse.Namespace,
     cfg,
-    dataset,
-    meta: dict,
     *,
     start_frame: int = 0,
     num_frames: int | None = None,
@@ -428,65 +321,14 @@ def _load_music(
     return None, None, None, None
 
 
-def _strip_retarget_suffix(stem: str) -> str:
-    return stem[: -len("_retarget")] if stem.endswith("_retarget") else stem
-
-
-def _aistpp_music_id(stem: str) -> str | None:
-    for token in _strip_retarget_suffix(stem).split("_"):
-        if len(token) >= 3 and token[0] == "m" and token[1:].isalnum():
-            return token
-    return None
-
-
-def _unique_existing_path(candidates: list[Path], label: str) -> Path | None:
-    existing = []
-    seen = set()
-    for path in candidates:
-        if not path.exists():
-            continue
-        key = str(path.resolve())
-        if key not in seen:
-            existing.append(path)
-            seen.add(key)
-    if len(existing) > 1:
-        raise ValueError(f"Ambiguous {label} files: " + ", ".join(str(path) for path in existing))
-    return existing[0].resolve() if existing else None
-
-
-def _dataset_dir_from_condition_path(path: Path) -> Path:
-    if path.parent.name in {"g1", "music_npy", "music_wav"}:
-        return path.parent.parent
-    return path.parent
-
-
-def _resolve_music_wav_from_path(path: str | Path | None) -> Path | None:
-    if path is None:
-        return None
-    source_path = Path(path)
-    if source_path.suffix.lower() == ".wav":
-        if not source_path.exists():
-            raise FileNotFoundError(f"Music wav file does not exist: {source_path}")
-        return source_path.resolve()
-
-    dataset_dir = _dataset_dir_from_condition_path(source_path)
-    wav_dir = dataset_dir / "music_wav"
-    stem = _strip_retarget_suffix(source_path.stem)
-    stems = [stem]
-    music_id = _aistpp_music_id(stem)
-    if music_id is not None and music_id not in stems:
-        stems.append(music_id)
-    candidates = [wav_dir / f"{candidate}.wav" for candidate in stems]
-    return _unique_existing_path(candidates, f"music wav for {source_path}")
-
-
 def _resolve_render_music_wav(args: argparse.Namespace, music_path: str | None, meta: dict) -> Path | None:
-    if music_path is None:
+    del music_path, meta
+    if args.music is None or Path(args.music).suffix.lower() != ".wav":
         return None
-    if args.music is not None:
-        return _resolve_music_wav_from_path(args.music)
-    source_file = meta.get("source_file")
-    return _resolve_music_wav_from_path(source_file or music_path)
+    path = Path(args.music)
+    if not path.exists():
+        raise FileNotFoundError(f"Music wav file does not exist: {path}")
+    return path.resolve()
 
 
 def _load_human_motion_path(path: str | Path, expected_dim: int) -> np.ndarray:
@@ -513,36 +355,6 @@ def _load_human_motion_path(path: str | Path, expected_dim: int) -> np.ndarray:
     if human.ndim != 2 or human.shape[-1] != int(expected_dim):
         raise ValueError(f"Expected human motion shape (T,{int(expected_dim)}), got {human.shape}")
     return human
-
-
-def _load_human_motion_from_dataset(dataset, meta: dict) -> tuple[np.ndarray | None, str | None]:
-    source = meta.get("source_file")
-    if not source:
-        return None, None
-    source_path = Path(source)
-    if not source_path.exists() or not hasattr(dataset, "_load_sequence"):
-        return None, None
-    sequence = dataset._load_sequence(source_path)
-    human = sequence.get("human_motion")
-    if human is None:
-        return None, None
-    return np.asarray(human, dtype=np.float32), str(source_path.resolve())
-
-
-def _load_audio_from_dataset(dataset, meta: dict) -> tuple[np.ndarray | None, str | None]:
-    if not getattr(dataset, "use_audio", False):
-        return None, None
-    source = meta.get("source_file")
-    if not source:
-        return None, None
-    source_path = Path(source)
-    if not source_path.exists() or not hasattr(dataset, "_load_sequence"):
-        return None, None
-    sequence = dataset._load_sequence(source_path)
-    audio = sequence.get("audio_features")
-    if audio is None:
-        return None, None
-    return np.asarray(audio, dtype=np.float32), str(source_path.resolve())
 
 
 def _slice_condition_array(array: np.ndarray, *, start_frame: int, num_frames: int) -> tuple[torch.Tensor, torch.Tensor, int | None]:
@@ -659,9 +471,13 @@ def _mux_wav_audio(
     return output_path
 
 
-def _val_dataset(cfg):
+def _val_dataset(cfg, *, num_frames: int):
     datamodule = instantiate(cfg.data, _recursive_=False)
-    dataset_cfg = next(iter(cfg.data.dataset_opts.val.values()))
+    dataset_cfg = next(iter(cfg.data.dataset_opts.val.values())).copy()
+    if dataset_cfg.get("_target_") != "omg.data.lerobot_dataset.LeRobotG1MotionDataset":
+        raise TypeError("Generation sample selection requires the canonical LeRobot data config")
+    fps = float(dataset_cfg.get("fps", 30.0))
+    dataset_cfg["sequence_duration"] = int(num_frames) / fps
     return datamodule._instantiate_dataset(dataset_cfg)
 
 
@@ -710,22 +526,6 @@ def _tagged_name(stem: str, tag: str, suffix: str) -> str:
     return f"{stem}_{tag}{suffix}" if tag else f"{stem}{suffix}"
 
 
-def _load_gt_qpos(meta: dict, num_frames: int) -> np.ndarray | None:
-    source = meta.get("source_file")
-    if not source:
-        return None
-    source_path = Path(source)
-    if not source_path.exists():
-        return None
-    start = int(meta.get("window_start", 0))
-    with np.load(source_path) as npz:
-        if "qpos" not in npz:
-            return None
-        qpos = np.asarray(npz["qpos"], dtype=np.float32)
-    meta["available_frames"] = max(0, int(qpos.shape[0]) - int(start))
-    return _pad_or_trim_array(qpos[start:], int(num_frames))
-
-
 def _render_overlay_lines(
     *,
     text: str,
@@ -769,12 +569,6 @@ def _parse_args() -> argparse.Namespace:
     text_group = parser.add_mutually_exclusive_group(required=False)
     text_group.add_argument("--text")
     text_group.add_argument("--text_file")
-    text_group.add_argument("--labels_json", help="Use the first action in this labels JSON as text and render its matched GT motion.")
-    parser.add_argument(
-        "--gt_labels_json",
-        default=None,
-        help="Optional labels JSON used only to load/render matched GT motion, without using its text as a condition.",
-    )
     parser.add_argument("--history_val_index", type=int, default=130)
     parser.add_argument("--cfg_scale", type=float, default=None)
     parser.add_argument("--cfg_text_scale", type=float, default=None)
@@ -815,11 +609,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Shortcut: save GT qpos slice and render generated-vs-GT comparison video.",
     )
-    parser.add_argument("--save_gt_motion", action="store_true", help="Save the GT qpos slice matched by --labels_json.")
+    parser.add_argument(
+        "--save_gt_motion",
+        action="store_true",
+        help="Save the exact GT qpos window selected by --history_val_index from the LeRobot validation split.",
+    )
     parser.add_argument(
         "--render_comparison_video",
         action="store_true",
-        help="Render generated motion on the left and --labels_json matched GT motion on the right.",
+        help="Render generated motion beside the exact LeRobot validation window selected by --history_val_index.",
     )
     parser.add_argument(
         "--overlay_gt_on_generated",
@@ -849,9 +647,6 @@ def main() -> None:
     if args.aligned_gt_comparison:
         args.save_gt_motion = True
         args.render_comparison_video = True
-    if (args.labels_json is not None or args.gt_labels_json is not None) and args.render_video:
-        args.save_gt_motion = True
-        args.render_comparison_video = True
     if args.render_human_ref:
         args.render_video = True
     torch.manual_seed(int(args.seed))
@@ -870,17 +665,19 @@ def main() -> None:
         )
     _apply_condition_injection_override(cfg, args)
 
-    dataset = _val_dataset(cfg)
-    history_val_index = int(args.history_val_index)
-
     print(f"[INFO] Checkpoint path: {Path(args.ckpt_path).resolve()}")
     model = _load_model(cfg, args.ckpt_path)
     print(_condition_injection_banner(getattr(model, "frame_cond_injection", None), "loaded model"))
     requested_num_frames = int(args.num_frames)
     sample_num_frames = _round_up_frames(requested_num_frames, int(model.representation.sequence_length))
+    dataset = _val_dataset(cfg, num_frames=sample_num_frames)
+    history_val_index = int(args.history_val_index)
     batch = _history_batch(dataset, history_val_index)
     history_meta = _jsonable_meta(_first_meta(batch))
     print(history_meta)
+    if args.text is None and args.text_file is None:
+        captions = batch.get("caption")
+        text = str(captions[0]) if isinstance(captions, list) and captions else ""
     use_audio = bool(cfg.model.get("use_audio", False))
     music_start_frame = int(history_meta.get("window_start", 0)) if use_audio else 0
     condition_start_frame = 0 if args.human_motion is not None else int(history_meta.get("window_start", 0))
@@ -891,22 +688,40 @@ def main() -> None:
         music_end_frame = None
         music_path = None
     else:
-        music_features, has_audio, music_end_frame, music_path = _load_music(
+        if args.music is None and bool(cfg.model.get("use_audio", False)):
+            dataset_audio = batch.get("audio_features")
+            dataset_audio_mask = batch.get("mask", {}).get("has_audio")
+            if not torch.is_tensor(dataset_audio) or not torch.is_tensor(dataset_audio_mask):
+                raise ValueError("LeRobot validation sample does not expose aligned audio features and mask")
+            music_features = dataset_audio[0]
+            has_audio = dataset_audio_mask[0]
+            music_end_frame = None
+            music_path = str(history_meta.get("source_file", ""))
+        else:
+            music_features, has_audio, music_end_frame, music_path = _load_music(
+                args,
+                cfg,
+                start_frame=music_start_frame,
+                num_frames=sample_num_frames,
+            )
+    if args.human_motion is None and bool(cfg.model.get("use_human_motion", False)):
+        dataset_human = batch.get("human_motion")
+        dataset_human_mask = batch.get("mask", {}).get("has_human_motion")
+        if not torch.is_tensor(dataset_human) or not torch.is_tensor(dataset_human_mask):
+            raise ValueError("LeRobot validation sample does not expose aligned human-reference features and mask")
+        human_motion = dataset_human[0]
+        has_human_motion = dataset_human_mask[0]
+        human_motion_end_frame = None
+        human_motion_path = str(history_meta.get("source_file", ""))
+    else:
+        human_motion, has_human_motion, human_motion_end_frame, human_motion_path = _load_human_motion(
             args,
             cfg,
             dataset,
             history_meta,
-            start_frame=music_start_frame,
+            start_frame=condition_start_frame,
             num_frames=sample_num_frames,
         )
-    human_motion, has_human_motion, human_motion_end_frame, human_motion_path = _load_human_motion(
-        args,
-        cfg,
-        dataset,
-        history_meta,
-        start_frame=condition_start_frame,
-        num_frames=sample_num_frames,
-    )
     if args.disable_human_motion_condition and bool(cfg.model.get("use_human_motion", False)):
         human_motion_dim = int(cfg.model.get("human_motion_dim", 66))
         human_motion = torch.zeros(sample_num_frames, human_motion_dim, dtype=torch.float32)
@@ -945,35 +760,21 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     qpos = sample["qpos_36"].detach().cpu()[:, :requested_num_frames]
     motion_features = sample["motion_features"].detach().cpu()[:, :requested_num_frames]
-    labels_text = None
-    labels_meta = None
-    labels_gt_qpos = None
-    gt_labels_json = args.labels_json if args.labels_json is not None else args.gt_labels_json
-    if gt_labels_json is not None:
-        labels_text, labels_gt_qpos, labels_meta = _load_labels_json_condition(
-            gt_labels_json,
-            num_frames=requested_num_frames,
-            fps=args.fps,
-        )
-    gt_qpos = labels_gt_qpos
-    if gt_labels_json is None and (args.save_gt_motion or args.render_comparison_video):
-        print(
-            "[WARN] GT rendering/comparison requires --labels_json or --gt_labels_json. "
-            "No GT labels path was provided, so GT motion and comparison video will be skipped."
-        )
+    gt_qpos = None
     gt_available_frames = None
-    if gt_qpos is not None:
-        gt_meta_for_frames = labels_meta if labels_meta is not None else history_meta
-        gt_available_frames = int(gt_meta_for_frames.get("available_frames", gt_qpos.shape[0]))
-        if gt_available_frames <= 0:
-            raise ValueError("Matched GT motion has no frames available for rendering")
-    render_num_frames = requested_num_frames if gt_available_frames is None else min(requested_num_frames, gt_available_frames)
-    if render_num_frames != requested_num_frames:
-        print(
-            "[INFO] Clip generated render/save frames to "
-            f"{render_num_frames} because matched GT has {gt_available_frames} available frames "
-            f"(requested {requested_num_frames})."
-        )
+    if args.save_gt_motion or args.render_comparison_video:
+        valid = batch.get("mask", {}).get("valid")
+        history_qpos = batch.get("qpos_36")
+        if not torch.is_tensor(valid) or not torch.is_tensor(history_qpos):
+            raise ValueError("Selected LeRobot validation sample does not expose qpos_36 and mask.valid")
+        gt_available_frames = int(valid[0].sum().item())
+        if requested_num_frames > gt_available_frames:
+            raise ValueError(
+                f"GT comparison requests {requested_num_frames} frames but the selected LeRobot window "
+                f"has exactly {gt_available_frames}; choose a compatible num_frames/data config"
+            )
+        gt_qpos = history_qpos[0, :requested_num_frames].detach().cpu().numpy().astype(np.float32, copy=False)
+    render_num_frames = requested_num_frames
     qpos = qpos[:, :render_num_frames]
     motion_features = motion_features[:, :render_num_frames]
     if gt_qpos is not None:
@@ -991,7 +792,7 @@ def main() -> None:
     torch.save({"qpos_36": qpos, "motion_features": motion_features}, output_dir / "sample.pt")
     np.save(output_dir / "qpos_36.npy", qpos[0].numpy().astype(np.float32, copy=False))
     if gt_qpos is not None:
-        gt_meta = labels_meta if labels_meta is not None else history_meta
+        gt_meta = history_meta
         np.save(output_dir / "gt_qpos_36.npy", gt_qpos.astype(np.float32, copy=False))
         np.savez_compressed(
             output_dir / "gt_reference_motion.npz",
@@ -1160,10 +961,6 @@ def main() -> None:
         "sample_num_frames": int(sample_num_frames),
         "seed": int(args.seed),
         "text": text,
-        "labels_json": None if args.labels_json is None else str(Path(args.labels_json).resolve()),
-        "gt_labels_json": None if args.gt_labels_json is None else str(Path(args.gt_labels_json).resolve()),
-        "labels_text": labels_text,
-        "labels_meta": labels_meta,
         "history_val_index": history_val_index,
         "aligned_gt_comparison": bool(args.aligned_gt_comparison),
         "overlay_gt_on_generated": bool(args.overlay_gt_on_generated),

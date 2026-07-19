@@ -77,6 +77,7 @@ class LeRobotG1MotionDataset(Dataset):
         eval_num_windows: int = 3,
     ) -> None:
         self.repo_id = str(repo_id)
+        self.revision = None if revision is None else str(revision)
         self.dataset_root = _resolve_root(dataset_root, repo_id=self.repo_id, revision=revision)
         self.split = str(split)
         self.sequence_duration = float(sequence_duration)
@@ -283,6 +284,51 @@ class LeRobotG1MotionDataset(Dataset):
             start = int(torch.randint(0, total_len - self.window_size + 1, (1,)).item())
             return start, self.window_size
         raise KeyError("fixed_window_start is required for evaluation samples")
+
+    def sample_locator(self, idx: int) -> dict[str, Any]:
+        """Return the stable LeRobot identity for one deterministic dataset sample."""
+        sample = self.samples[int(idx)]
+        total_len = int(sample["data_end_row"]) - int(sample["data_start_row"])
+        start, valid_len = self._get_window(sample, total_len)
+        return {
+            "repo_id": self.repo_id,
+            "revision": self.revision,
+            "split": self.split,
+            "episode_index": int(sample["episode_index"]),
+            "window_start": int(start),
+            "num_frames": int(self.window_size),
+            "valid_frames": int(valid_len),
+            "source_dataset": str(sample["source_dataset"]),
+            "source_id": str(sample["sequence_name"]),
+            "segment_index": int(sample.get("segment_index", 0)),
+            "source_start_frame": int(sample.get("source_start_frame", 0)),
+            "source_end_frame": int(sample.get("source_end_frame", total_len)),
+        }
+
+    def sample_has_condition(self, idx: int, condition: str, *, num_frames: int) -> bool:
+        """Check exact full-window condition availability without running FK."""
+        required = int(num_frames)
+        if required <= 0:
+            raise ValueError("num_frames must be positive")
+        sample = self.samples[int(idx)]
+        locator = self.sample_locator(int(idx))
+        if int(locator["valid_frames"]) < required:
+            return False
+        if condition == "text":
+            return bool(self.use_text and sample.get("has_text", False) and str(sample.get("segment_caption", "")).strip())
+        columns = {
+            "audio": (self.use_audio, "omg.condition.has_audio"),
+            "humanref": (self.use_human_motion, "omg.condition.has_humanref"),
+        }
+        if condition not in columns:
+            raise ValueError(f"Unsupported condition={condition!r}")
+        enabled, column = columns[condition]
+        if not enabled:
+            return False
+        episode = self._read_episode(sample)
+        start = int(locator["window_start"])
+        mask = np.asarray(episode[column][start : start + required], dtype=np.bool_).reshape(-1)
+        return bool(mask.shape[0] == required and mask.all())
 
     def _get_prev_indices(self, start: int, total_len: int) -> torch.Tensor:
         return torch.tensor(

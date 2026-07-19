@@ -707,18 +707,11 @@ class MotionGenerator(pl.LightningModule):
         for idx, item in enumerate(items):
             if not isinstance(item, dict):
                 continue
-            source_file = str(item.get("source_file", ""))
-            parts = source_file.split("/")
-            dataset = ""
-            if "omg_data" in parts:
-                pos = parts.index("omg_data")
-                if pos + 2 < len(parts):
-                    dataset = parts[pos + 2]
             out.append(
                 {
                     "sample_idx": idx,
-                    "dataset": dataset,
-                    "source_file": source_file,
+                    "dataset": str(item.get("source_dataset", "")),
+                    "source_file": str(item.get("source_file", "")),
                     "sequence_name": item.get("sequence_name", ""),
                     "window_start": item.get("window_start"),
                     "window_end": item.get("window_end"),

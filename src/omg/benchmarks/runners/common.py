@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from omg.benchmarks.evaluator.motion_encoder import MotionEncoder
+from omg.benchmarks.lerobot import BENCHMARK_SAMPLE_SCHEMA, build_lerobot_benchmark_views
 from omg.benchmarks.evaluator.representation import (
     canonical_body_positions_from_qpos,
     motion_input_dim,
@@ -21,15 +22,27 @@ from omg.benchmarks.evaluator.representation import (
 from omg.benchmarks.metrics import diversity, motion_fid, motion_kid
 from omg.core.paths import resolve_repo_path
 from omg.generation.metrics import physical_qpos_metrics
+from omg.data.lerobot_dataset import LeRobotG1MotionDataset
 
 
 @dataclass(frozen=True)
 class SampleRecord:
     dataset: str
-    index: int
+    index: int | None
     global_index: int | None = None
     caption: str | None = None
     meta: dict[str, Any] | None = None
+    schema: str | None = None
+    repo_id: str | None = None
+    revision: str | None = None
+    split: str | None = None
+    episode_index: int | None = None
+    window_start: int | None = None
+    num_frames: int | None = None
+    source_id: str | None = None
+    segment_index: int | None = None
+    source_start_frame: int | None = None
+    source_end_frame: int | None = None
 
 
 @dataclass(frozen=True)
@@ -98,13 +111,57 @@ def _load_sample_records(path: Path) -> list[SampleRecord]:
             continue
         payload = json.loads(line)
         try:
+            if payload.get("schema") != BENCHMARK_SAMPLE_SCHEMA:
+                raise ValueError(
+                    f"Unsupported benchmark sample schema at {path}:{line_no}: "
+                    f"{payload.get('schema')!r}; expected {BENCHMARK_SAMPLE_SCHEMA!r}"
+                )
+            dataset_name = str(payload["dataset"])
+            source_dataset = str(payload["source_dataset"])
+            if not dataset_name or dataset_name != source_dataset:
+                raise ValueError(
+                    f"Benchmark dataset/source_dataset mismatch at {path}:{line_no}: "
+                    f"{dataset_name!r} != {source_dataset!r}"
+                )
+            strings = {
+                key: str(payload[key])
+                for key in ("repo_id", "revision", "split", "source_id")
+            }
+            empty = [key for key, value in strings.items() if not value.strip()]
+            if empty:
+                raise ValueError(f"Empty benchmark identity fields at {path}:{line_no}: {empty}")
+            integers = {
+                key: int(payload[key])
+                for key in (
+                    "episode_index",
+                    "window_start",
+                    "num_frames",
+                    "segment_index",
+                    "source_start_frame",
+                    "source_end_frame",
+                )
+            }
+            if integers["episode_index"] < 0 or integers["window_start"] < 0 or integers["num_frames"] <= 0:
+                raise ValueError(f"Invalid benchmark window identity at {path}:{line_no}: {integers}")
+            if integers["source_start_frame"] < 0 or integers["source_end_frame"] <= integers["source_start_frame"]:
+                raise ValueError(f"Invalid benchmark source interval at {path}:{line_no}: {integers}")
             records.append(
                 SampleRecord(
-                    dataset=str(payload["dataset"]),
-                    index=int(payload["index"]),
-                    global_index=None if payload.get("global_index") is None else int(payload["global_index"]),
+                    dataset=dataset_name,
+                    index=None,
                     caption=payload.get("caption"),
                     meta=payload.get("meta"),
+                    schema=str(payload["schema"]),
+                    repo_id=strings["repo_id"],
+                    revision=strings["revision"],
+                    split=strings["split"],
+                    episode_index=integers["episode_index"],
+                    window_start=integers["window_start"],
+                    num_frames=integers["num_frames"],
+                    source_id=strings["source_id"],
+                    segment_index=integers["segment_index"],
+                    source_start_frame=integers["source_start_frame"],
+                    source_end_frame=integers["source_end_frame"],
                 )
             )
         except KeyError as exc:
@@ -118,26 +175,61 @@ def _write_sample_records(path: Path, records: list[SampleRecord], datasets: dic
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         for record in records:
+            if record.index is None:
+                raise ValueError(f"Cannot write unresolved benchmark record: {record}")
+            dataset = datasets[record.dataset]
+            if not hasattr(dataset, "sample_identity"):
+                raise TypeError(f"Dataset {record.dataset!r} does not expose stable LeRobot sample identities")
             item = datasets[record.dataset][record.index]
-            payload = asdict(record)
+            payload = {
+                **dataset.sample_identity(record.index),
+                "dataset": record.dataset,
+            }
             payload["caption"] = str(item.get("caption", ""))
             payload["meta"] = _jsonable(item.get("meta", {}))
             handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-def _dataset_filter_tokens_from_records(records: list[SampleRecord]) -> list[str]:
-    tokens: list[str] = []
+def _resolve_sample_records(records: list[SampleRecord], datasets: dict[str, Any]) -> list[SampleRecord]:
+    resolved: list[SampleRecord] = []
+    for record in records:
+        if record.dataset not in datasets:
+            raise KeyError(f"Sample references unknown dataset {record.dataset!r}")
+        if record.schema is None:
+            if record.index is None:
+                raise ValueError(f"Runtime sample record has neither stable identity nor index: {record}")
+            resolved.append(record)
+            continue
+        dataset = datasets[record.dataset]
+        if not hasattr(dataset, "resolve_identity"):
+            raise TypeError(f"Dataset {record.dataset!r} cannot resolve stable LeRobot sample identities")
+        identity = {
+            "schema": record.schema,
+            "repo_id": record.repo_id,
+            "revision": record.revision,
+            "split": record.split,
+            "episode_index": record.episode_index,
+            "window_start": record.window_start,
+            "num_frames": record.num_frames,
+            "source_dataset": record.dataset,
+            "source_id": record.source_id,
+            "segment_index": record.segment_index,
+            "source_start_frame": record.source_start_frame,
+            "source_end_frame": record.source_end_frame,
+        }
+        resolved.append(replace(record, index=int(dataset.resolve_identity(identity))))
+    return resolved
+
+
+def _dataset_names_from_records(records: list[SampleRecord]) -> list[str]:
+    names: list[str] = []
     seen: set[str] = set()
     for record in records:
-        token = str(record.dataset)
-        for suffix in ("_train", "_val", "_test"):
-            if token.endswith(suffix):
-                token = token[: -len(suffix)]
-                break
-        if token not in seen:
-            seen.add(token)
-            tokens.append(token)
-    return tokens
+        name = str(record.dataset)
+        if name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -151,6 +243,8 @@ def _validate_sample_records(records: list[SampleRecord], datasets: dict[str, An
     for record in records:
         if record.dataset not in datasets:
             raise KeyError(f"Sample references unknown dataset '{record.dataset}'")
+        if record.index is None:
+            raise ValueError(f"Sample record is unresolved: {record}")
         dataset_len = len(datasets[record.dataset])
         if record.index < 0 or record.index >= dataset_len:
             raise IndexError(
@@ -167,36 +261,50 @@ def _dataset_target(cfg: Any) -> str | None:
     return getattr(cfg, "_target_", None)
 
 
-def _with_representation_rotation(dataset_cfg: Any, rotation_representation: str | None) -> Any:
-    if rotation_representation is None:
-        return dataset_cfg
-    if _dataset_target(dataset_cfg) != "omg.data.g1_motion.G1MotionDataset":
-        return dataset_cfg
+def _with_representation_rotation(
+    dataset_cfg: Any,
+    rotation_representation: str | None,
+    *,
+    num_frames: int | None = None,
+) -> Any:
+    if _dataset_target(dataset_cfg) != "omg.data.lerobot_dataset.LeRobotG1MotionDataset":
+        raise TypeError("Benchmarks require LeRobotG1MotionDataset data configs")
     patched = OmegaConf.to_container(dataset_cfg, resolve=True)
     if not isinstance(patched, dict):
         raise TypeError(f"Expected dataset config to convert to dict, got {type(patched)!r}")
-    patched["rotation_representation"] = str(rotation_representation)
+    if rotation_representation is not None:
+        patched["rotation_representation"] = str(rotation_representation)
+    if num_frames is not None:
+        fps = float(patched.get("fps", 30.0))
+        patched["sequence_duration"] = int(num_frames) / fps
     return patched
 
 
-def _build_datasets(cfg: Any, split: str, include: list[str] | None = None) -> dict[str, Any]:
+def _build_datasets(
+    cfg: Any,
+    split: str,
+    include: list[str] | None = None,
+    *,
+    num_frames: int | None = None,
+) -> dict[str, Any]:
     dataset_opts = cfg.data.dataset_opts
     if split not in dataset_opts:
         raise KeyError(f"Data config has no split {split!r}")
     rotation_representation = cfg.representation.get("rotation_representation") if "representation" in cfg else None
-    datasets = {}
-    for name, dataset_cfg in dataset_opts[split].items():
-        if include is not None:
-            name_text = str(name).lower()
-            if not any(token.lower() in name_text for token in include):
-                continue
-        dataset = instantiate(_with_representation_rotation(dataset_cfg, rotation_representation))
-        if len(dataset) <= 0:
-            raise ValueError(f"Dataset {name!r} for split {split!r} is empty")
-        datasets[str(name)] = dataset
-    if not datasets:
-        raise ValueError(f"No datasets selected for split {split!r}")
-    return datasets
+    configs = list(dataset_opts[split].items())
+    if len(configs) != 1:
+        raise ValueError(f"LeRobot benchmark config requires exactly one dataset for {split!r}, got {len(configs)}")
+    name, dataset_cfg = configs[0]
+    dataset = instantiate(
+        _with_representation_rotation(
+            dataset_cfg,
+            rotation_representation,
+            num_frames=num_frames,
+        )
+    )
+    if not isinstance(dataset, LeRobotG1MotionDataset):
+        raise TypeError(f"Expected LeRobotG1MotionDataset for {name!r}, got {type(dataset).__name__}")
+    return build_lerobot_benchmark_views(dataset, include=include)
 
 
 def _load_model(cfg: Any, ckpt_path: str, device: torch.device):
@@ -438,57 +546,38 @@ def output_dir(args: Any, name: str) -> Path:
     return Path("outputs") / "benchmark" / name / str(args.exp)
 
 
-def item_has_condition(item: dict[str, Any], *, tensor_key: str, mask_key: str, num_frames: int) -> bool:
-    value = item.get(tensor_key)
-    mask = item.get("mask", {}).get(mask_key)
-    if value is None or not torch.is_tensor(value):
-        return False
-    if mask is None or not torch.is_tensor(mask):
-        return False
-    if value.shape[0] < int(num_frames) or mask.shape[0] < int(num_frames):
-        return False
-    return bool(mask[: int(num_frames)].all().item())
-
-
 def select_condition_records(
     datasets: dict[str, Any],
     *,
     num_samples: int,
     seed: int,
     num_frames: int,
-    tensor_key: str,
-    mask_key: str,
-    label: str,
+    condition: str,
 ) -> list[SampleRecord]:
     if int(num_samples) < 1:
         raise ValueError("--num_samples must be positive")
-    print(f"[INFO] Selecting {label} benchmark records (scanning datasets for valid {tensor_key} frames ≥{num_frames})…")
+    print(f"[INFO] Selecting {condition} benchmark records with {num_frames} exact valid condition frames…")
     candidates: list[tuple[str, int, int]] = []
-    global_index = 0
     per_dataset_counts: dict[str, int] = {}
     for name, dataset in datasets.items():
         count = 0
+        if not hasattr(dataset, "sample_has_condition"):
+            raise TypeError(f"Dataset {name!r} is not a LeRobot benchmark view")
         for index in tqdm(
             range(len(dataset)),
             desc=f"Scan {name}",
             unit="idx",
             leave=False,
         ):
-            if item_has_condition(
-                dataset[index],
-                tensor_key=tensor_key,
-                mask_key=mask_key,
-                num_frames=num_frames,
-            ):
-                candidates.append((name, index, global_index))
+            if dataset.sample_has_condition(index, condition, num_frames=num_frames):
+                candidates.append((name, index, dataset.global_index(index)))
                 count += 1
-            global_index += 1
         per_dataset_counts[name] = count
     if not candidates:
-        raise ValueError(f"No {label} samples with at least {num_frames} valid condition frames found")
+        raise ValueError(f"No {condition} samples with {num_frames} exact valid condition frames found")
     if int(num_samples) > len(candidates):
         print(
-            f"[WARN] Requested {num_samples} {label} samples but only found {len(candidates)}; "
+            f"[WARN] Requested {num_samples} {condition} samples but only found {len(candidates)}; "
             "evaluating all available samples."
         )
         num_samples = len(candidates)
@@ -500,8 +589,8 @@ def select_condition_records(
         dataset_name, index, candidate_global = candidates[int(candidate_index)]
         selected_counts[dataset_name] = selected_counts.get(dataset_name, 0) + 1
         records.append(SampleRecord(dataset=dataset_name, index=index, global_index=candidate_global))
-    print(f"[INFO] {label} samples by dataset: {per_dataset_counts}")
-    print(f"[INFO] selected {label} benchmark samples by dataset: {selected_counts}")
+    print(f"[INFO] {condition} samples by dataset: {per_dataset_counts}")
+    print(f"[INFO] selected {condition} benchmark samples by dataset: {selected_counts}")
     return records
 
 

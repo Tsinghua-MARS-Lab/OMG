@@ -21,12 +21,14 @@ from omg.utils.rotation_conversions import standardize_quaternion
 class EpisodeCachedG1MotionDataset(Dataset):
     """Read exact windows from frame-level episode kinematics caches."""
 
-    FORMAT = "omg.episode_cache.g1_motion.v1"
+    FORMAT = "omg.episode_cache.g1_motion.v2"
 
     def __init__(
         self,
         root: str | Path,
         split: str,
+        source_repo_id: str,
+        source_revision: str,
         limit_size: int | None = None,
         shard_cache_size: int = 4,
         episode_cache_size: int = 64,
@@ -42,6 +44,15 @@ class EpisodeCachedG1MotionDataset(Dataset):
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
         if summary.get("format") != self.FORMAT:
             raise ValueError(f"Unsupported episode-cache format: {summary.get('format')!r}")
+        self.source_repo_id = str(summary.get("source_repo_id", ""))
+        self.source_revision = str(summary.get("source_revision", ""))
+        expected_identity = (str(source_repo_id), str(source_revision))
+        actual_identity = (self.source_repo_id, self.source_revision)
+        if actual_identity != expected_identity:
+            raise ValueError(
+                "Episode cache LeRobot identity mismatch: "
+                f"cache={actual_identity!r} expected={expected_identity!r}"
+            )
         self.window_size = int(summary["window_size"])
         self.num_prev_states = int(summary["num_prev_states"])
         self.train_window_stride = int(summary["train_window_stride"])
