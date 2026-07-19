@@ -11,6 +11,17 @@ Place the dataset at `data/OMG-Data`, or set:
 
 ```bash
 export OMG_DATA_ROOT=/path/to/OMG-Data
+
+hf download THU-MARS/OMG-Data \
+  --type dataset \
+  --revision 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7 \
+  --local-dir "$OMG_DATA_ROOT"
+
+hf cache verify THU-MARS/OMG-Data \
+  --type dataset \
+  --revision 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7 \
+  --local-dir "$OMG_DATA_ROOT" \
+  --fail-on-missing-files
 ```
 
 The expected layout is:

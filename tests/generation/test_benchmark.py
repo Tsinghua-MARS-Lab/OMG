@@ -116,6 +116,7 @@ def test_lerobot_config_pins_public_dataset_revision():
     dataset_cfg = test_opts.omg_lerobot_test
     assert dataset_cfg.repo_id == "THU-MARS/OMG-Data"
     assert dataset_cfg.revision == "6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7"
+    assert dataset_cfg.manifest_sha256 == "be443885018180dda0f88ed874efc15cb3776a91148148baf49001d56a5ec855"
 
 
 def test_lerobot_omnimodal_config_enables_all_conditions():

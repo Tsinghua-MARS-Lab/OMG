@@ -105,6 +105,17 @@ Set explicit roots when using external storage:
 export OMG_DATA_ROOT=/path/to/OMG-Data
 export OMG_MATERIALIZED_ROOT=/path/to/OMG-Data/materialized
 export OMG_MODELS_ROOT=/path/to/OMG-models
+
+hf download THU-MARS/OMG-Data \
+  --type dataset \
+  --revision 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7 \
+  --local-dir "$OMG_DATA_ROOT"
+
+hf cache verify THU-MARS/OMG-Data \
+  --type dataset \
+  --revision 6e0dfbc1c5298bff14d4e2b1459ad678af0a38e7 \
+  --local-dir "$OMG_DATA_ROOT" \
+  --fail-on-missing-files
 ```
 
 The data configs pin the official Hub commit and release-manifest SHA-256.
