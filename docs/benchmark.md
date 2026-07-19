@@ -58,6 +58,10 @@ against LeRobot metadata and reject stale or mismatched manifests. The same
 fixed rows can therefore be shared by checkpoint and artifact evaluations
 without relying on machine-local indices or private source paths.
 
+The preparation command preserves the release cohort protocol (12 text
+cohorts, 5 audio cohorts, and 11 human-reference cohorts) while resolving each
+selected row to its canonical LeRobot source dataset.
+
 Use the generated manifest as input to benchmark runners, for example with
 `--samples_path .../text_test_1024.jsonl`. Dataset names passed through
 `--datasets` are exact values from the `omg/dataset` episode column.

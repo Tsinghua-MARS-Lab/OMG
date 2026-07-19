@@ -17,6 +17,7 @@ from omg.benchmarks.runners.common import (
     select_condition_records,
 )
 from omg.benchmarks.metrics import multimodality
+from omg.cli.evaluation.prepare_samples import _condition_cohorts
 from omg.benchmarks.runners.text import (
     _retrieval_distances_and_ranks,
     _sample_metric_rows,
@@ -128,6 +129,23 @@ def test_lerobot_omnimodal_config_enables_all_conditions():
     assert dataset_cfg.use_text is True
     assert dataset_cfg.use_audio is True
     assert dataset_cfg.use_human_motion is True
+
+
+def test_benchmark_cohorts_preserve_release_protocol():
+    text = _condition_cohorts("text", "test")
+    audio = _condition_cohorts("audio", "test")
+    humanref = _condition_cohorts("humanref", "test")
+    assert len(text) == 12
+    assert len(audio) == 5
+    assert len(humanref) == 11
+    assert text["amass"] == ("amass_test",)
+    assert audio["aioz_gdance"] == ("aioz_gdance_test",)
+    assert humanref["beat2"] == (
+        "beat2_chinese_test",
+        "beat2_english_test",
+        "beat2_japanese_test",
+        "beat2_spanish_test",
+    )
 
 
 def test_select_condition_records_requires_full_condition_window():

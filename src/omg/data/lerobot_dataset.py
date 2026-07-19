@@ -312,10 +312,10 @@ class LeRobotG1MotionDataset(Dataset):
             raise ValueError("num_frames must be positive")
         sample = self.samples[int(idx)]
         locator = self.sample_locator(int(idx))
-        if int(locator["valid_frames"]) < required:
-            return False
         if condition == "text":
             return bool(self.use_text and sample.get("has_text", False) and str(sample.get("segment_caption", "")).strip())
+        if int(locator["valid_frames"]) < required:
+            return False
         columns = {
             "audio": (self.use_audio, "omg.condition.has_audio"),
             "humanref": (self.use_human_motion, "omg.condition.has_humanref"),

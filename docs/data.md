@@ -106,9 +106,12 @@ PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
   --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
 ```
 
-Condition eligibility is exact over the full requested window: text must be
-present, and every audio or human-reference frame must have its corresponding
-mask set.
+Condition eligibility follows the release protocol: text needs a non-empty
+task and uses the motion-valid mask for short clips, while every requested
+audio or human-reference frame must have its corresponding condition mask set.
+Sampling remains balanced over the original release benchmark
+cohorts; the four language-specific BEAT2 source groups form one human-reference
+cohort so the protocol remains comparable to `mixed_modalities_all_v1`.
 
 ## External inference conditions
 

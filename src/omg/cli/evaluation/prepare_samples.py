@@ -24,6 +24,66 @@ CONDITION_SPECS = {
     "humanref": {"output_name": "humanref_test_512.jsonl"},
 }
 
+BENCHMARK_COHORT_FAMILIES = {
+    "text": {
+        name: (name,)
+        for name in (
+            "100style",
+            "amass",
+            "bones_seed",
+            "fitness",
+            "humanml",
+            "idea400",
+            "lafan1",
+            "motiongv",
+            "motionllama",
+            "omomo",
+            "permo",
+            "snapmogen",
+        )
+    },
+    "audio": {
+        name: (name,)
+        for name in (
+            "aioz_gdance",
+            "aistpp",
+            "compas3d",
+            "finedance",
+            "opendance",
+        )
+    },
+    "humanref": {
+        **{
+            name: (name,)
+            for name in (
+                "aistpp",
+                "amass",
+                "finedance",
+                "fitness",
+                "humanml",
+                "idea400",
+                "motiongv",
+                "motionllama",
+                "permo",
+                "snapmogen",
+            )
+        },
+        "beat2": (
+            "beat2_chinese",
+            "beat2_english",
+            "beat2_japanese",
+            "beat2_spanish",
+        ),
+    },
+}
+
+
+def _condition_cohorts(condition: str, split: str) -> dict[str, tuple[str, ...]]:
+    return {
+        cohort: tuple(f"{family}_{split}" for family in families)
+        for cohort, families in BENCHMARK_COHORT_FAMILIES[condition].items()
+    }
+
 
 def _item_matches_condition(dataset: Any, index: int, *, condition: str, num_frames: int) -> bool:
     if not hasattr(dataset, "sample_has_condition"):
@@ -34,26 +94,35 @@ def _item_matches_condition(dataset: Any, index: int, *, condition: str, num_fra
 def _candidate_records(
     datasets: dict[str, Any],
     *,
-    dataset_names: list[str],
+    cohorts: dict[str, tuple[str, ...]],
     condition: str,
     num_frames: int,
 ) -> dict[str, list[SampleRecord]]:
-    by_dataset: dict[str, list[SampleRecord]] = defaultdict(list)
-    selected_names = set(dataset_names)
+    by_cohort: dict[str, list[SampleRecord]] = defaultdict(list)
+    source_to_cohort: dict[str, str] = {}
+    for cohort, source_datasets in cohorts.items():
+        for source_dataset in source_datasets:
+            if source_dataset not in datasets:
+                raise KeyError(f"Benchmark cohort {cohort!r} requires missing source dataset {source_dataset!r}")
+            if source_dataset in source_to_cohort:
+                raise ValueError(f"Source dataset {source_dataset!r} belongs to multiple benchmark cohorts")
+            source_to_cohort[source_dataset] = cohort
     for dataset_name, dataset in datasets.items():
-        is_selected = dataset_name in selected_names
+        cohort = source_to_cohort.get(dataset_name)
+        if cohort is None:
+            continue
         for index in tqdm(range(len(dataset)), desc=f"Scan {condition} {dataset_name}", unit="idx", leave=False):
-            if is_selected and _item_matches_condition(dataset, index, condition=condition, num_frames=num_frames):
+            if _item_matches_condition(dataset, index, condition=condition, num_frames=num_frames):
                 source_index = dataset.global_index(index)
-                by_dataset[dataset_name].append(
+                by_cohort[cohort].append(
                     SampleRecord(dataset=dataset_name, index=index, global_index=source_index)
                 )
-    missing = [name for name in dataset_names if not by_dataset.get(name)]
+    missing = [cohort for cohort in cohorts if not by_cohort.get(cohort)]
     if missing:
-        print(f"[WARN] No valid {condition} samples found for datasets: {missing}", flush=True)
-    if not by_dataset:
+        raise ValueError(f"No valid {condition} samples found for benchmark cohorts: {missing}")
+    if not by_cohort:
         raise ValueError(f"No valid {condition} samples found in selected datasets")
-    return dict(by_dataset)
+    return dict(by_cohort)
 
 
 def _balanced_counts(candidate_counts: dict[str, int], *, total: int) -> dict[str, int]:
@@ -169,12 +238,17 @@ def main() -> None:
         )
 
     datasets = _build_datasets(cfg, args.split, num_frames=args.num_frames)
-    dataset_names = list(datasets)
     first_dataset = next(iter(datasets.values()))
     dataset_identity = {"repo_id": str(first_dataset.repo_id), "revision": str(first_dataset.revision)}
     summaries: dict[str, dict[str, Any]] = {}
     for condition in args.conditions:
-        candidates = _candidate_records(datasets, dataset_names=dataset_names, condition=condition, num_frames=args.num_frames)
+        cohorts = _condition_cohorts(condition, args.split)
+        candidates = _candidate_records(
+            datasets,
+            cohorts=cohorts,
+            condition=condition,
+            num_frames=args.num_frames,
+        )
         records, candidate_counts, selected_counts = _select_balanced_records(
             candidates,
             num_samples=requested[condition],
@@ -187,6 +261,7 @@ def main() -> None:
             "num_samples": len(records),
             "candidate_counts": candidate_counts,
             "selected_counts": selected_counts,
+            "cohorts": {name: list(source_datasets) for name, source_datasets in cohorts.items()},
         }
         print(f"[INFO] wrote {condition} samples: {path} selected={selected_counts}", flush=True)
 

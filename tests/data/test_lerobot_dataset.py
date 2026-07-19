@@ -189,7 +189,9 @@ def test_lerobot_benchmark_view_resolves_complete_identity(tmp_path: Path) -> No
     }
     assert view.resolve_identity(identity) == 0
     assert view.sample_has_condition(0, "text", num_frames=3)
+    assert view.sample_has_condition(0, "text", num_frames=6)
     assert view.sample_has_condition(0, "audio", num_frames=3)
+    assert not view.sample_has_condition(0, "audio", num_frames=6)
     assert view.sample_has_condition(0, "humanref", num_frames=3)
     with pytest.raises(ValueError, match="revision"):
         view.resolve_identity({**identity, "revision": "other"})
