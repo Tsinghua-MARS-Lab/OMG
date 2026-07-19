@@ -22,9 +22,12 @@ const requiredSnippets = [
   ["composition demo poster", "./static/results/composition-realtime-switching-poster.jpg"],
   ["arxiv link", "https://arxiv.org/abs/2606.10340"],
   ["github code link", "https://github.com/Tsinghua-MARS-Lab/OMG"],
+  ["hugging face model link", "https://huggingface.co/THU-MARS/OMG"],
+  ["hugging face dataset link", "https://huggingface.co/datasets/THU-MARS/OMG-Data"],
   ["cite link", 'href="#citation"'],
   ["arxiv icon", "button-icon-arxiv"],
   ["github icon", "button-icon-github"],
+  ["hugging face icon", "button-icon-huggingface"],
   ["cite icon", "button-icon-cite"],
   ["dataset hours", "1174.66"],
   ["model family", "OMG-DiT"]
