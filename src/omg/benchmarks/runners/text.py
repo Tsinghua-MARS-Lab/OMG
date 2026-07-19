@@ -51,6 +51,7 @@ from omg.benchmarks.runners.common import (
     _write_jsonl,
     _write_sample_records,
 )
+from omg.benchmarks.protocol import benchmark_source_datasets
 from omg.benchmarks.runners.tracker_executed import (
     add_tracker_executed_args,
     run_tracker_executed_benchmark,
@@ -1344,12 +1345,16 @@ def main(argv: list[str] | None = None) -> None:
         records = _load_sample_records(sample_path)
         print(f"[INFO] Loaded {len(records)} sample records from {sample_path.resolve()}")
     dataset_include = args.datasets if args.datasets is not None else (
-        _dataset_names_from_records(records) if records is not None else None
+        _dataset_names_from_records(records)
+        if records is not None
+        else benchmark_source_datasets("text", args.split)
     )
     datasets = _build_datasets(cfg, args.split, include=dataset_include, num_frames=args.num_frames)
     reference_include = args.reference_datasets
     if reference_include is None and args.reference_split == args.split:
         reference_include = dataset_include
+    elif reference_include is None:
+        reference_include = benchmark_source_datasets("text", args.reference_split)
     reference_datasets = _build_datasets(
         cfg,
         args.reference_split,

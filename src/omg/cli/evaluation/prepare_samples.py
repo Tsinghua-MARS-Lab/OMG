@@ -10,6 +10,7 @@ import numpy as np
 from hydra import compose, initialize_config_dir
 from tqdm import tqdm
 
+from omg.benchmarks.protocol import benchmark_condition_cohorts
 from omg.benchmarks.runners.common import (
     SampleRecord,
     _build_datasets,
@@ -23,67 +24,6 @@ CONDITION_SPECS = {
     "audio": {"output_name": "audio_test_512.jsonl"},
     "humanref": {"output_name": "humanref_test_512.jsonl"},
 }
-
-BENCHMARK_COHORT_FAMILIES = {
-    "text": {
-        name: (name,)
-        for name in (
-            "100style",
-            "amass",
-            "bones_seed",
-            "fitness",
-            "humanml",
-            "idea400",
-            "lafan1",
-            "motiongv",
-            "motionllama",
-            "omomo",
-            "permo",
-            "snapmogen",
-        )
-    },
-    "audio": {
-        name: (name,)
-        for name in (
-            "aioz_gdance",
-            "aistpp",
-            "compas3d",
-            "finedance",
-            "opendance",
-        )
-    },
-    "humanref": {
-        **{
-            name: (name,)
-            for name in (
-                "aistpp",
-                "amass",
-                "finedance",
-                "fitness",
-                "humanml",
-                "idea400",
-                "motiongv",
-                "motionllama",
-                "permo",
-                "snapmogen",
-            )
-        },
-        "beat2": (
-            "beat2_chinese",
-            "beat2_english",
-            "beat2_japanese",
-            "beat2_spanish",
-        ),
-    },
-}
-
-
-def _condition_cohorts(condition: str, split: str) -> dict[str, tuple[str, ...]]:
-    return {
-        cohort: tuple(f"{family}_{split}" for family in families)
-        for cohort, families in BENCHMARK_COHORT_FAMILIES[condition].items()
-    }
-
 
 def _item_matches_condition(dataset: Any, index: int, *, condition: str, num_frames: int) -> bool:
     if not hasattr(dataset, "sample_has_condition"):
@@ -237,12 +177,29 @@ def main() -> None:
             ],
         )
 
-    datasets = _build_datasets(cfg, args.split, num_frames=args.num_frames)
+    cohorts_by_condition = {
+        condition: benchmark_condition_cohorts(condition, args.split)
+        for condition in args.conditions
+    }
+    source_datasets = sorted(
+        {
+            source_dataset
+            for cohorts in cohorts_by_condition.values()
+            for cohort_sources in cohorts.values()
+            for source_dataset in cohort_sources
+        }
+    )
+    datasets = _build_datasets(
+        cfg,
+        args.split,
+        include=source_datasets,
+        num_frames=args.num_frames,
+    )
     first_dataset = next(iter(datasets.values()))
     dataset_identity = {"repo_id": str(first_dataset.repo_id), "revision": str(first_dataset.revision)}
     summaries: dict[str, dict[str, Any]] = {}
     for condition in args.conditions:
-        cohorts = _condition_cohorts(condition, args.split)
+        cohorts = cohorts_by_condition[condition]
         candidates = _candidate_records(
             datasets,
             cohorts=cohorts,
