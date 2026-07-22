@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import pytest
 
 from omg.generation.denoisers.transformer import _rotate_half
-from omg.generation.export import DenoiserStepExportModel, build_export_metadata
+from omg.generation.export import (
+    DenoiserStepExportModel,
+    build_export_metadata,
+    validate_export_wrapper_parity,
+)
 
 
 class _FakeKinematics:
@@ -83,6 +88,33 @@ def test_denoiser_step_export_wrapper_contract():
     assert pred.shape == (1, 5, 3)
 
 
+def _wrapper_parity_inputs():
+    return (
+        torch.randn(1, 5, 3),
+        torch.zeros(1, 5, dtype=torch.long),
+        torch.ones(1, 5, dtype=torch.bool),
+        torch.randn(1, 2, 3),
+        torch.randn(1, 7, 6),
+        torch.ones(1, 7, dtype=torch.bool),
+    )
+
+
+def test_export_wrapper_parity_accepts_equivalent_graph():
+    model = _FakeModel().eval()
+    wrapper = DenoiserStepExportModel(model).eval()
+    metrics = validate_export_wrapper_parity(model, wrapper, _wrapper_parity_inputs(), {})
+    assert metrics["max_abs"] == 0.0
+
+
+def test_export_wrapper_parity_rejects_semantic_drift():
+    model = _FakeModel().eval()
+    wrapper = DenoiserStepExportModel(model).eval()
+    with torch.no_grad():
+        wrapper.denoiser.output.weight.add_(1.0)
+    with pytest.raises(RuntimeError, match="changed the training denoiser semantics"):
+        validate_export_wrapper_parity(model, wrapper, _wrapper_parity_inputs(), {})
+
+
 def test_build_export_metadata_contract():
     metadata = build_export_metadata(_FakeModel(), opset=17, text_len=7)
     assert metadata["format"] == "omg.denoiser_step"
@@ -128,7 +160,14 @@ def test_rotate_half_matches_stack_flatten():
 
 
 
-def test_tensorrt_compatible_denoiser_matches_transformer_attention():
+@pytest.mark.parametrize(
+    ("self_qk_norm", "cross_qk_norm"),
+    [(False, False), (False, True), (True, False), (True, True)],
+)
+def test_tensorrt_compatible_denoiser_matches_transformer_attention(
+    self_qk_norm: bool,
+    cross_qk_norm: bool,
+):
     from omg.generation.denoisers.transformer import MotionTransformerDenoiser, RotarySelfAttention
     from omg.generation.export.onnx import (
         TensorRTFriendlyMultiheadAttention,
@@ -144,6 +183,8 @@ def test_tensorrt_compatible_denoiser_matches_transformer_attention():
         num_heads=2,
         text_dim=10,
         dropout=0.0,
+        self_attention_qk_norm=self_qk_norm,
+        cross_attention_qk_norm=cross_qk_norm,
     ).eval()
     converted = make_tensorrt_compatible_denoiser(denoiser, sequence_length=5).eval()
 
@@ -151,6 +192,9 @@ def test_tensorrt_compatible_denoiser_matches_transformer_attention():
     assert not any(isinstance(module, RotarySelfAttention) for module in converted.modules())
     assert any(isinstance(module, TensorRTFriendlyMultiheadAttention) for module in converted.modules())
     assert any(isinstance(module, TensorRTFriendlyRotarySelfAttention) for module in converted.modules())
+    converted_block = converted.layers[0]
+    assert converted_block.self_attn.qk_norm is self_qk_norm
+    assert converted_block.cross_attn.qk_norm is cross_qk_norm
 
     x = torch.randn(1, 5, 6)
     timesteps = torch.zeros(1, 5, dtype=torch.long)

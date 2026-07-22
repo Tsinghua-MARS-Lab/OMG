@@ -9,6 +9,8 @@ from omg.generation.export.onnx import (
     export_denoiser_step_onnx,
     load_export_metadata,
     validate_tensorrt_compatible_onnx,
+    validate_export_wrapper_parity,
+    validate_exported_onnx_parity,
     metadata_sidecar_path,
     save_export_metadata,
 )
@@ -24,6 +26,8 @@ __all__ = [
     "export_denoiser_step_onnx",
     "load_export_metadata",
     "validate_tensorrt_compatible_onnx",
+    "validate_export_wrapper_parity",
+    "validate_exported_onnx_parity",
     "metadata_sidecar_path",
     "save_export_metadata",
 ]

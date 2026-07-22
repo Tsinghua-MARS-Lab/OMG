@@ -116,7 +116,24 @@ PYTHONPATH=src python -m omg.cli.generation.export_onnx \
 
 The exporter writes a sidecar metadata file next to the ONNX model. The planner
 uses that metadata to recover sequence length, feature dimension, text/audio
-settings, representation, and diffusion contract.
+settings, representation, diffusion contract, and attention architecture.
+
+New checkpoints carry an architecture contract. Legacy checkpoints do not, and
+QK-normalization changes cannot be inferred from parameter names or shapes. A
+legacy export must therefore declare one of `none`, `cross-only`, `self-only`,
+or `self-and-cross` and instantiate the matching denoiser. Example:
+
+```bash
+PYTHONPATH=src python -m omg.cli.generation.export_onnx \
+  --exp 100m_omnimodal \
+  --ckpt_path /path/to/legacy.ckpt \
+  --legacy-attention-contract cross-only \
+  denoiser.self_attention_qk_norm=false \
+  denoiser.cross_attention_qk_norm=true
+```
+
+The exporter validates training-denoiser-to-wrapper and wrapper-to-ONNX numeric
+parity. It deletes the emitted graph and fails if either gate exceeds tolerance.
 
 ## TensorRT Runtime
 

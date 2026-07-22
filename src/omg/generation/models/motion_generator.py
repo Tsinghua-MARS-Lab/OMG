@@ -9,6 +9,8 @@ import torch.nn as nn
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
+from omg.generation.architecture import MODEL_ARCHITECTURE_KEY, build_model_architecture_contract
+
 
 FRAME_COND_INJECTION_MODES = {
     "sum_to_time",
@@ -156,6 +158,9 @@ class MotionGenerator(pl.LightningModule):
                 f"model={self.frame_cond_injection!r}, denoiser={actual!r}. "
                 "Instantiate the denoiser with the same mode instead of changing the mode after construction."
             )
+
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        checkpoint[MODEL_ARCHITECTURE_KEY] = build_model_architecture_contract(self)
 
     def _configure_denoiser_frame_condition_grads(self) -> None:
         separate_mode = self.frame_cond_injection == "separate_to_h"
