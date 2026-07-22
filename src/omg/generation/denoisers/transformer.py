@@ -63,7 +63,14 @@ class RotaryPositionEmbedding(nn.Module):
 
 
 class RotarySelfAttention(nn.Module):
-    def __init__(self, hidden_dim: int, num_heads: int, dropout: float = 0.1, rope_base: float = 10000.0):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_heads: int,
+        dropout: float = 0.1,
+        rope_base: float = 10000.0,
+        qk_norm: bool = True,
+    ):
         super().__init__()
         if hidden_dim % num_heads != 0:
             raise ValueError(f"hidden_dim={hidden_dim} must be divisible by num_heads={num_heads}")
@@ -76,6 +83,7 @@ class RotarySelfAttention(nn.Module):
         self.rope = RotaryPositionEmbedding(self.head_dim, base=rope_base)
         self.out_proj = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.dropout = float(dropout)
+        self.qk_norm = bool(qk_norm)
 
     def forward(self, x: torch.Tensor, key_padding_mask: torch.Tensor | None = None) -> torch.Tensor:
         batch_size, seq_len, _ = x.shape
@@ -86,9 +94,10 @@ class RotarySelfAttention(nn.Module):
         v = v.transpose(1, 2)
         q, k = self.rope.apply(q, k)
 
-        head_scale = math.sqrt(self.head_dim)
-        q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
-        k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
+        if self.qk_norm:
+            head_scale = math.sqrt(self.head_dim)
+            q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+            k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
 
         attn_mask = None
         if key_padding_mask is not None:
@@ -265,10 +274,23 @@ def _qk_normalized_cross_attention(
 
 
 class RotaryTransformerEncoderLayer(nn.Module):
-    def __init__(self, hidden_dim: int, num_heads: int, dropout: float = 0.1, rope_base: float = 10000.0):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_heads: int,
+        dropout: float = 0.1,
+        rope_base: float = 10000.0,
+        self_attention_qk_norm: bool = True,
+    ):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_dim)
-        self.attn = RotarySelfAttention(hidden_dim, num_heads, dropout=dropout, rope_base=rope_base)
+        self.attn = RotarySelfAttention(
+            hidden_dim,
+            num_heads,
+            dropout=dropout,
+            rope_base=rope_base,
+            qk_norm=self_attention_qk_norm,
+        )
         self.norm2 = nn.LayerNorm(hidden_dim)
         self.ff = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * 4),
@@ -344,6 +366,8 @@ class MotionTransformerBlock(nn.Module):
         audio_local_attn_window: int = 8,
         human_motion_local_attn_window: int = 2,
         use_human_motion_local_attn: bool = False,
+        self_attention_qk_norm: bool = True,
+        cross_attention_qk_norm: bool = True,
     ):
         super().__init__()
         self.norm_cross = nn.LayerNorm(hidden_dim)
@@ -359,7 +383,9 @@ class MotionTransformerBlock(nn.Module):
             num_heads,
             dropout=dropout,
             rope_base=rope_base,
+            qk_norm=self_attention_qk_norm,
         )
+        self.cross_attention_qk_norm = bool(cross_attention_qk_norm)
         self.norm_ff = nn.LayerNorm(hidden_dim)
         ff_dim = int(round(hidden_dim * float(mlp_ratio)))
         self.ff = nn.Sequential(
@@ -501,12 +527,21 @@ class MotionTransformerBlock(nn.Module):
     ) -> torch.Tensor:
         context_key_padding = ~context_mask.bool()
         h = self.norm_cross(x)
-        cross = _qk_normalized_cross_attention(
-            self.cross_attn,
-            query=h,
-            context=context,
-            context_key_padding_mask=context_key_padding,
-        )
+        if self.cross_attention_qk_norm:
+            cross = _qk_normalized_cross_attention(
+                self.cross_attn,
+                query=h,
+                context=context,
+                context_key_padding_mask=context_key_padding,
+            )
+        else:
+            cross, _ = self.cross_attn(
+                query=h,
+                key=context,
+                value=context,
+                key_padding_mask=context_key_padding,
+                need_weights=False,
+            )
         x = x + self.dropout(cross)
         h = self.norm_self(x)
         x = x + self.dropout(self.self_attn(h, key_padding_mask=key_padding_mask))
@@ -554,6 +589,8 @@ class MotionTransformerDenoiser(BaseMotionDenoiser):
         audio_local_attn_window: int = 8,
         human_motion_local_attn_window: int = 2,
         use_human_motion_local_attn: bool = False,
+        self_attention_qk_norm: bool = True,
+        cross_attention_qk_norm: bool = True,
     ):
         super().__init__()
         self.hidden_dim = int(hidden_dim)
@@ -563,6 +600,8 @@ class MotionTransformerDenoiser(BaseMotionDenoiser):
         self.audio_local_attn_window = int(audio_local_attn_window)
         self.human_motion_local_attn_window = int(human_motion_local_attn_window)
         self.use_human_motion_local_attn = bool(use_human_motion_local_attn)
+        self.self_attention_qk_norm = bool(self_attention_qk_norm)
+        self.cross_attention_qk_norm = bool(cross_attention_qk_norm)
         self.time_embed = TimestepEmbedding(self.hidden_dim)
         self.input_proj = nn.Linear(self.input_dim + self.hidden_dim, self.hidden_dim)
         self.text_proj = nn.Linear(int(text_dim), self.hidden_dim)
@@ -580,6 +619,8 @@ class MotionTransformerDenoiser(BaseMotionDenoiser):
                     audio_local_attn_window=self.audio_local_attn_window,
                     human_motion_local_attn_window=self.human_motion_local_attn_window,
                     use_human_motion_local_attn=self.use_human_motion_local_attn,
+                    self_attention_qk_norm=self.self_attention_qk_norm,
+                    cross_attention_qk_norm=self.cross_attention_qk_norm,
                 )
                 for _ in range(int(num_layers))
             ]

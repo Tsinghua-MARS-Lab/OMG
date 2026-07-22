@@ -235,7 +235,23 @@ PYTHONPATH=src python -m omg.cli.generation.export_onnx \
 
 The exporter writes a metadata sidecar next to the ONNX file. Runtime planners
 use it to recover sequence length, condition dimensions, representation, and
-diffusion settings.
+diffusion settings. New checkpoints record their attention architecture and the
+exporter rejects a mismatched config. For checkpoints created before this
+contract existed, declare the training semantics explicitly; for example, a
+checkpoint trained with cross-attention QK normalization only requires:
+
+```bash
+PYTHONPATH=src python -m omg.cli.generation.export_onnx \
+  --exp 100m_omnimodal \
+  --ckpt_path /path/to/legacy.ckpt \
+  --legacy-attention-contract cross-only \
+  denoiser.self_attention_qk_norm=false \
+  denoiser.cross_attention_qk_norm=true
+```
+
+Export is fail-closed: it numerically compares the training denoiser, the
+TensorRT-compatible wrapper, and the emitted ONNX graph before retaining the
+artifact.
 
 ## 7. Generate and Track
 

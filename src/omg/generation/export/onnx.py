@@ -9,7 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from omg.generation.denoisers.transformer import RotarySelfAttention
+from omg.generation.architecture import build_model_architecture_contract
+from omg.generation.denoisers.transformer import MotionTransformerBlock, RotarySelfAttention
 
 EXPORT_METADATA_KEY = "omg_export_metadata"
 EXPORT_FORMAT = "omg.denoiser_step"
@@ -22,20 +23,26 @@ def _rotate_half_export(x: torch.Tensor) -> torch.Tensor:
 
 
 class TensorRTFriendlyMultiheadAttention(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, bias: bool):
+    def __init__(self, embed_dim: int, num_heads: int, bias: bool, qk_norm: bool = False):
         super().__init__()
         self.embed_dim = int(embed_dim)
         self.num_heads = int(num_heads)
         if self.embed_dim % self.num_heads != 0:
             raise ValueError(f"embed_dim={embed_dim} must be divisible by num_heads={num_heads}")
         self.head_dim = self.embed_dim // self.num_heads
+        self.qk_norm = bool(qk_norm)
         self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=bias)
         self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=bias)
         self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=bias)
         self.out_proj = nn.Linear(self.embed_dim, self.embed_dim, bias=bias)
 
     @classmethod
-    def from_mha(cls, module: nn.MultiheadAttention) -> TensorRTFriendlyMultiheadAttention:
+    def from_mha(
+        cls,
+        module: nn.MultiheadAttention,
+        *,
+        qk_norm: bool = False,
+    ) -> TensorRTFriendlyMultiheadAttention:
         if module.kdim != module.embed_dim or module.vdim != module.embed_dim:
             raise ValueError("TensorRT diffusion export requires kdim == vdim == embed_dim for cross-attention")
         if module.bias_k is not None or module.bias_v is not None or module.add_zero_attn:
@@ -43,7 +50,12 @@ class TensorRTFriendlyMultiheadAttention(nn.Module):
         if module.in_proj_weight is None:
             raise ValueError("TensorRT diffusion export requires packed MultiheadAttention in_proj_weight")
 
-        converted = cls(module.embed_dim, module.num_heads, bias=module.in_proj_bias is not None)
+        converted = cls(
+            module.embed_dim,
+            module.num_heads,
+            bias=module.in_proj_bias is not None,
+            qk_norm=qk_norm,
+        )
         q_weight, k_weight, v_weight = module.in_proj_weight.detach().chunk(3, dim=0)
         converted.q_proj.weight.data.copy_(q_weight)
         converted.k_proj.weight.data.copy_(k_weight)
@@ -73,9 +85,10 @@ class TensorRTFriendlyMultiheadAttention(nn.Module):
         q = self.q_proj(query).reshape(batch_size, query_len, self.num_heads, self.head_dim).transpose(1, 2)
         k = self.k_proj(key).reshape(batch_size, key_len, self.num_heads, self.head_dim).transpose(1, 2)
         v = self.v_proj(value).reshape(batch_size, key_len, self.num_heads, self.head_dim).transpose(1, 2)
-        head_scale = float(self.head_dim) ** 0.5
-        q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
-        k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
+        if self.qk_norm:
+            head_scale = float(self.head_dim) ** 0.5
+            q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+            k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
 
         attn_mask = None
         if key_padding_mask is not None:
@@ -88,13 +101,21 @@ class TensorRTFriendlyMultiheadAttention(nn.Module):
 
 
 class TensorRTFriendlyRotarySelfAttention(nn.Module):
-    def __init__(self, hidden_dim: int, num_heads: int, sequence_length: int, inv_freq: torch.Tensor):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_heads: int,
+        sequence_length: int,
+        inv_freq: torch.Tensor,
+        qk_norm: bool = True,
+    ):
         super().__init__()
         self.hidden_dim = int(hidden_dim)
         self.num_heads = int(num_heads)
         if self.hidden_dim % self.num_heads != 0:
             raise ValueError(f"hidden_dim={hidden_dim} must be divisible by num_heads={num_heads}")
         self.head_dim = self.hidden_dim // self.num_heads
+        self.qk_norm = bool(qk_norm)
         if self.head_dim % 2 != 0:
             raise ValueError(f"RoPE requires an even attention head dim, got {self.head_dim}")
         self.qkv = nn.Linear(self.hidden_dim, self.hidden_dim * 3)
@@ -120,6 +141,7 @@ class TensorRTFriendlyRotarySelfAttention(nn.Module):
             num_heads=module.num_heads,
             sequence_length=sequence_length,
             inv_freq=module.rope.inv_freq.detach(),
+            qk_norm=module.qk_norm,
         )
         converted.qkv.load_state_dict(module.qkv.state_dict())
         converted.out_proj.load_state_dict(module.out_proj.state_dict())
@@ -135,9 +157,10 @@ class TensorRTFriendlyRotarySelfAttention(nn.Module):
         sin = self.sin[:, :, :seq_len, :].to(dtype=q.dtype)
         q = (q * cos) + (_rotate_half_export(q) * sin)
         k = (k * cos) + (_rotate_half_export(k) * sin)
-        head_scale = float(self.head_dim) ** 0.5
-        q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
-        k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
+        if self.qk_norm:
+            head_scale = float(self.head_dim) ** 0.5
+            q = F.normalize(q.float(), dim=-1).to(dtype=q.dtype) * head_scale
+            k = F.normalize(k.float(), dim=-1).to(dtype=k.dtype) * head_scale
 
         attn_mask = None
         if key_padding_mask is not None:
@@ -153,6 +176,15 @@ class TensorRTFriendlyRotarySelfAttention(nn.Module):
 
 
 def _replace_export_attention(module: nn.Module, *, sequence_length: int) -> None:
+    if isinstance(module, MotionTransformerBlock):
+        module.cross_attn = TensorRTFriendlyMultiheadAttention.from_mha(
+            module.cross_attn,
+            qk_norm=module.cross_attention_qk_norm,
+        )
+        module.self_attn = TensorRTFriendlyRotarySelfAttention.from_rotary_self_attention(
+            module.self_attn,
+            sequence_length=sequence_length,
+        )
     for name, child in list(module.named_children()):
         if isinstance(child, nn.MultiheadAttention):
             setattr(module, name, TensorRTFriendlyMultiheadAttention.from_mha(child))
@@ -234,11 +266,8 @@ class DenoiserStepExportModel(nn.Module):
             conditions[mask_key] = mask
         return frame_cond
 
-    def forward(
+    def _prepare_conditions(
         self,
-        x: torch.Tensor,
-        timesteps: torch.Tensor,
-        valid_mask: torch.Tensor,
         history_features: torch.Tensor,
         text_context: torch.Tensor,
         text_mask: torch.Tensor,
@@ -246,7 +275,7 @@ class DenoiserStepExportModel(nn.Module):
         audio_mask: torch.Tensor | None = None,
         human_motion: torch.Tensor | None = None,
         human_motion_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    ) -> dict[str, torch.Tensor]:
         history_norm = (history_features - self.feature_mean.to(history_features)) / self.feature_std.to(history_features)
         history_tokens = self.history_projector(history_norm)
         extra_tokens = [history_tokens]
@@ -282,11 +311,119 @@ class DenoiserStepExportModel(nn.Module):
             )
         if frame_cond is not None:
             conditions["frame_cond"] = frame_cond
+        return conditions
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        timesteps: torch.Tensor,
+        valid_mask: torch.Tensor,
+        history_features: torch.Tensor,
+        text_context: torch.Tensor,
+        text_mask: torch.Tensor,
+        audio_features: torch.Tensor | None = None,
+        audio_mask: torch.Tensor | None = None,
+        human_motion: torch.Tensor | None = None,
+        human_motion_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        conditions = self._prepare_conditions(
+            history_features,
+            text_context,
+            text_mask,
+            audio_features,
+            audio_mask,
+            human_motion,
+            human_motion_mask,
+        )
         pred = self.denoiser(x, timesteps, conditions, valid_mask=None)
         # The exported planner contract samples fixed full chunks. Keep
         # valid_mask as an ABI input without routing it through attention masks.
         valid_mask_anchor = valid_mask.to(dtype=pred.dtype).sum() * 0.0
         return pred + valid_mask_anchor
+
+
+def validate_export_wrapper_parity(
+    motion_model: nn.Module,
+    wrapper: DenoiserStepExportModel,
+    args: tuple[torch.Tensor, ...],
+    kwargs: dict[str, torch.Tensor],
+    *,
+    atol: float = 1.0e-4,
+    rtol: float = 1.0e-4,
+) -> dict[str, float]:
+    x, timesteps, _, history_features, text_context, text_mask = args
+    conditions = wrapper._prepare_conditions(
+        history_features,
+        text_context,
+        text_mask,
+        kwargs.get("audio_features"),
+        kwargs.get("audio_mask"),
+        kwargs.get("human_motion"),
+        kwargs.get("human_motion_mask"),
+    )
+    with torch.no_grad():
+        expected = motion_model.denoiser(x, timesteps, conditions, valid_mask=None)
+        actual = wrapper(*args, **kwargs)
+    delta = (actual.float() - expected.float()).detach()
+    metrics = {
+        "max_abs": float(delta.abs().max().cpu()),
+        "mean_abs": float(delta.abs().mean().cpu()),
+        "rmse": float(delta.square().mean().sqrt().cpu()),
+    }
+    if not torch.allclose(actual, expected, atol=float(atol), rtol=float(rtol)):
+        raise RuntimeError(
+            "TensorRT export wrapper changed the training denoiser semantics: "
+            f"metrics={metrics}, atol={atol}, rtol={rtol}"
+        )
+    return metrics
+
+
+def validate_exported_onnx_parity(
+    onnx_path: str | Path,
+    wrapper: DenoiserStepExportModel,
+    args: tuple[torch.Tensor, ...],
+    kwargs: dict[str, torch.Tensor],
+    *,
+    max_abs_tolerance: float = 5.0e-3,
+    rmse_tolerance: float = 5.0e-4,
+) -> dict[str, Any]:
+    import numpy as np
+    import onnxruntime as ort
+
+    with torch.no_grad():
+        expected = wrapper(*args, **kwargs).detach().float().cpu().numpy()
+    names = [
+        "x",
+        "timesteps",
+        "valid_mask",
+        "history_features",
+        "text_context",
+        "text_mask",
+    ]
+    feeds = {name: value.detach().cpu().numpy() for name, value in zip(names, args, strict=True)}
+    feeds.update({name: value.detach().cpu().numpy() for name, value in kwargs.items()})
+
+    available = ort.get_available_providers()
+    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    providers = [provider for provider in providers if provider in available]
+    if not providers:
+        raise RuntimeError(f"No supported ONNX Runtime provider is available; found {available}")
+    session = ort.InferenceSession(str(onnx_path), providers=providers)
+    accepted = {value.name for value in session.get_inputs()}
+    actual = session.run(None, {name: value for name, value in feeds.items() if name in accepted})[0]
+    delta = actual.astype(np.float64) - expected.astype(np.float64)
+    metrics: dict[str, Any] = {
+        "provider": session.get_providers()[0],
+        "max_abs": float(np.abs(delta).max()),
+        "mean_abs": float(np.abs(delta).mean()),
+        "rmse": float(np.sqrt(np.square(delta).mean())),
+    }
+    if metrics["max_abs"] > float(max_abs_tolerance) or metrics["rmse"] > float(rmse_tolerance):
+        raise RuntimeError(
+            "Exported ONNX changed the export-wrapper semantics: "
+            f"metrics={metrics}, max_abs_tolerance={max_abs_tolerance}, rmse_tolerance={rmse_tolerance}"
+        )
+    return metrics
 
 
 def _infer_text_dim(model: nn.Module) -> int:
@@ -356,6 +493,7 @@ def build_export_metadata(
         "batch_size": int(batch_size),
         "stats_path": _as_repo_or_abs_path(getattr(representation, "stats_path", None)),
         "kinematics_path": _as_repo_or_abs_path(getattr(representation.kinematics, "kinematics_path", None)),
+        "model_architecture": build_model_architecture_contract(model),
     }
     return metadata
 
@@ -436,6 +574,10 @@ def export_denoiser_step_onnx(
     text_len: int | None = None,
     batch_size: int = 2,
     dynamo: bool = True,
+    wrapper_parity_atol: float = 1.0e-4,
+    wrapper_parity_rtol: float = 1.0e-4,
+    onnx_parity_max_abs: float = 5.0e-3,
+    onnx_parity_rmse: float = 5.0e-4,
 ) -> dict[str, Any]:
     if dynamo and int(opset) < 18:
         raise ValueError("The torch dynamo ONNX exporter requires opset >= 18")
@@ -492,6 +634,14 @@ def export_denoiser_step_onnx(
         kwargs["human_motion"] = torch.randn(batch, seq_len, human_motion_dim, device=device, dtype=torch.float32)
         kwargs["human_motion_mask"] = torch.ones(batch, seq_len, device=device, dtype=torch.bool)
         input_names.extend(["human_motion", "human_motion_mask"])
+    wrapper_metrics = validate_export_wrapper_parity(
+        model,
+        wrapper,
+        args,
+        kwargs,
+        atol=wrapper_parity_atol,
+        rtol=wrapper_parity_rtol,
+    )
     with torch.no_grad():
         torch.onnx.export(
             wrapper,
@@ -504,6 +654,29 @@ def export_denoiser_step_onnx(
             do_constant_folding=True,
             dynamo=bool(dynamo),
         )
+    try:
+        onnx_metrics = validate_exported_onnx_parity(
+            output,
+            wrapper,
+            args,
+            kwargs,
+            max_abs_tolerance=onnx_parity_max_abs,
+            rmse_tolerance=onnx_parity_rmse,
+        )
+    except Exception:
+        output.unlink(missing_ok=True)
+        Path(str(output) + ".data").unlink(missing_ok=True)
+        raise
+    metadata["parity_validation"] = {
+        "training_denoiser_to_export_wrapper": wrapper_metrics,
+        "export_wrapper_to_onnx": onnx_metrics,
+        "thresholds": {
+            "wrapper_atol": float(wrapper_parity_atol),
+            "wrapper_rtol": float(wrapper_parity_rtol),
+            "onnx_max_abs": float(onnx_parity_max_abs),
+            "onnx_rmse": float(onnx_parity_rmse),
+        },
+    }
     save_export_metadata(output, metadata)
     embed_export_metadata(output, metadata)
     validate_tensorrt_compatible_onnx(output)

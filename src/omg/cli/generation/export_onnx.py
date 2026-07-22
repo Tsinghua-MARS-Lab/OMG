@@ -8,6 +8,10 @@ import torch
 from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 
+from omg.generation.architecture import (
+    LEGACY_ATTENTION_CONTRACTS,
+    validate_checkpoint_architecture_contract,
+)
 from omg.generation.export import export_denoiser_step_onnx, metadata_sidecar_path
 
 
@@ -15,9 +19,21 @@ def _config_dir() -> Path:
     return Path(__file__).resolve().parents[4] / "configs" / "generation"
 
 
-def _load_model(cfg, ckpt_path: str | Path, device: torch.device, *, strict: bool):
+def _load_model(
+    cfg,
+    ckpt_path: str | Path,
+    device: torch.device,
+    *,
+    strict: bool,
+    legacy_attention_contract: str | None,
+):
     model = instantiate(cfg.model)
     payload = torch.load(ckpt_path, map_location="cpu")
+    architecture = validate_checkpoint_architecture_contract(
+        payload,
+        model,
+        legacy_attention_contract=legacy_attention_contract,
+    )
     state_dict = payload.get("state_dict", payload)
     incompatible = model.load_state_dict(state_dict, strict=bool(strict))
     if not strict:
@@ -25,6 +41,7 @@ def _load_model(cfg, ckpt_path: str | Path, device: torch.device, *, strict: boo
             "[INFO] Loaded checkpoint with strict=False: "
             f"missing={len(incompatible.missing_keys)} unexpected={len(incompatible.unexpected_keys)}"
         )
+    print(f"[INFO] Validated checkpoint architecture: {architecture}")
     return model.to(device).eval()
 
 
@@ -54,6 +71,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=2, help="Fixed exported ONNX batch size. Use 2 for batched CFG TensorRT inference.")
     parser.add_argument("--legacy-exporter", action="store_true", help="Use the legacy torch.onnx tracer instead of the dynamo exporter.")
     parser.add_argument("--allow-partial-ckpt", action="store_true", help="Load checkpoint with strict=False before exporting.")
+    parser.add_argument(
+        "--legacy-attention-contract",
+        choices=tuple(LEGACY_ATTENTION_CONTRACTS),
+        default=None,
+        help=(
+            "Required for checkpoints created before architecture contracts were recorded. "
+            "The selected contract must match explicit denoiser QK-normalization overrides."
+        ),
+    )
     parser.add_argument("overrides", nargs="*", help="Additional Hydra overrides, e.g. model.text_encoder.model_name=models/t5-base-local")
     return parser.parse_args()
 
@@ -76,7 +102,13 @@ def main() -> None:
             ],
         )
 
-    model = _load_model(cfg, args.ckpt_path, device=device, strict=not bool(args.allow_partial_ckpt))
+    model = _load_model(
+        cfg,
+        args.ckpt_path,
+        device=device,
+        strict=not bool(args.allow_partial_ckpt),
+        legacy_attention_contract=args.legacy_attention_contract,
+    )
     metadata = export_denoiser_step_onnx(
         model,
         output,
