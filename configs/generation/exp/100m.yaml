@@ -1,13 +1,19 @@
 # @package _global_
 defaults:
+  - override /data: omg_data_materialized_omnimodal
   - override /model: motion_generator
   - override /denoiser: transformer_100m
   - override /diffusion: guided_x0
-  - override /loss: full
+  - override /loss: diffusion_only
+  - override /trainer: 4gpu
 
 exp_name: 100m
 model:
   diffusion_target: future
+  history_pos_encoding: sinusoidal
+  use_audio: true
+  use_human_motion: true
+  log_loss_term_grad_norms: false
   optimizer:
     lr: 1.0e-4
     weight_decay: 0.01
@@ -34,3 +40,5 @@ data:
   loader_opts:
     train:
       batch_size: 192
+      num_workers: 2
+      prefetch_factor: 2

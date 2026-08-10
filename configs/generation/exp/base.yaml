@@ -1,10 +1,41 @@
 # @package _global_
 defaults:
+  - override /data: omg_data_materialized_omnimodal
   - override /model: motion_generator
   - override /denoiser: transformer
   - override /diffusion: guided_x0
-  - override /loss: full
+  - override /loss: diffusion_only
+  - override /trainer: 4gpu
 
 exp_name: base
 model:
   diffusion_target: future
+  history_pos_encoding: sinusoidal
+  use_audio: true
+  use_human_motion: true
+  log_loss_term_grad_norms: false
+  optimizer:
+    lr: 1.0e-4
+    weight_decay: 0.01
+  scheduler:
+    type: linear_warmup_cosine
+    warmup_steps: 2000
+    warmup_start_factor: 1.0e-4
+    t_max: 180000
+    eta_min: 1.0e-6
+trainer:
+  max_steps: 180000
+  val_check_interval: 2000
+  accumulate_grad_batches: 1
+  limit_val_batches: 200
+callbacks:
+  checkpoint:
+    every_n_train_steps: 2000
+  divergence_guard:
+    loss_monitor: diffusion_loss
+data:
+  loader_opts:
+    train:
+      batch_size: 192
+      num_workers: 2
+      prefetch_factor: 2

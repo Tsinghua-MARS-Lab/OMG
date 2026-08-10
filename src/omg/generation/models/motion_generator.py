@@ -10,6 +10,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from omg.generation.architecture import MODEL_ARCHITECTURE_KEY, build_model_architecture_contract
+from omg.generation.conditions.position import SinusoidalPositionEncoding
 
 
 FRAME_COND_INJECTION_MODES = {
@@ -42,6 +43,7 @@ class MotionGenerator(pl.LightningModule):
         condition_dim: int | None = None,
         text_mask_prob: float = 0.1,
         history_mask_prob: float = 0.1,
+        history_pos_encoding: str = "none",
         use_audio: bool = False,
         audio_dim: int = 35,
         audio_mask_prob: float = 0.1,
@@ -80,6 +82,12 @@ class MotionGenerator(pl.LightningModule):
         self.diffusion_target = str(diffusion_target)
         if self.diffusion_target not in {"future", "history_future"}:
             raise ValueError(f"Unsupported diffusion_target: {self.diffusion_target}")
+        self.history_pos_encoding = str(history_pos_encoding).lower()
+        if self.history_pos_encoding not in {"none", "sinusoidal"}:
+            raise ValueError(
+                f"Unsupported history_pos_encoding={self.history_pos_encoding!r}; "
+                "expected 'none' or 'sinusoidal'"
+            )
 
         self.condition_dim = int(condition_dim or getattr(self.denoiser, "hidden_dim", 768))
         self.text_encoder = None
@@ -104,6 +112,11 @@ class MotionGenerator(pl.LightningModule):
             nn.Linear(self.representation.feat_dim, self.condition_dim),
             nn.SiLU(),
             nn.Linear(self.condition_dim, self.condition_dim),
+        )
+        self.history_pos_encoder = (
+            SinusoidalPositionEncoding(self.condition_dim)
+            if self.history_pos_encoding == "sinusoidal"
+            else None
         )
         self.use_audio = bool(use_audio)
         self.audio_dim = int(audio_dim)
@@ -316,6 +329,8 @@ class MotionGenerator(pl.LightningModule):
         history = self._history_features(batch).to(device=device, dtype=self.representation.mean.dtype)
         history_norm = self.representation.normalize_features(history)
         history_tokens = self.history_projector(history_norm)
+        if self.history_pos_encoder is not None:
+            history_tokens = history_tokens + self.history_pos_encoder(history_tokens)
         if self.training and not force_null_text:
             if self.history_mask_prob > 0.0:
                 keep_history = (torch.rand(history.shape[0], 1, 1, device=device) >= self.history_mask_prob).to(history_tokens.dtype)

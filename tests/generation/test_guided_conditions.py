@@ -16,6 +16,7 @@ if "hydra" not in sys.modules:
     sys.modules["hydra"] = hydra
     sys.modules["hydra.utils"] = hydra_utils
 
+from omg.generation.conditions.position import SinusoidalPositionEncoding
 from omg.generation.denoisers.transformer import MotionTransformerDenoiser
 from omg.generation.models.motion_generator import MotionGenerator
 
@@ -179,6 +180,55 @@ def test_history_dropout_masks_extra_tokens():
     model.train()
     conditions = model._conditions(_batch())
     assert torch.allclose(conditions["extra_tokens"], torch.zeros(2, 2, 8))
+
+
+def test_sinusoidal_history_encoding_is_ordered_and_shared_across_batch():
+    encoder = SinusoidalPositionEncoding(8)
+    tokens = torch.zeros(2, 3, 8)
+    encoded = encoder(tokens)
+    assert encoded.shape == tokens.shape
+    assert torch.allclose(encoded[0], encoded[1])
+    assert not torch.allclose(encoded[:, 0], encoded[:, 1])
+    assert torch.allclose(encoded[:, 0, 0], torch.zeros(2))
+    assert torch.allclose(encoded[:, 0, 1], torch.ones(2))
+
+
+def test_sinusoidal_history_encoding_supports_odd_dimensions_and_input_dtype():
+    tokens = torch.zeros(1, 2, 3, dtype=torch.float64)
+    encoded = SinusoidalPositionEncoding(3)(tokens)
+    assert encoded.shape == tokens.shape
+    assert encoded.dtype == tokens.dtype
+
+
+def test_sinusoidal_history_encoding_is_removed_by_history_dropout():
+    model = _model(history_mask_prob=1.0, history_pos_encoding="sinusoidal")
+    model.history_projector = ConstantProjector(8, 4.0)
+    model.train()
+    conditions = model._conditions(_batch())
+    assert torch.allclose(conditions["extra_tokens"], torch.zeros(2, 2, 8))
+
+
+def test_default_history_encoding_matches_explicit_none():
+    default = _model()
+    explicit_none = _model(history_pos_encoding="none")
+    default.history_projector = ConstantProjector(8, 4.0)
+    explicit_none.history_projector = ConstantProjector(8, 4.0)
+    default.eval()
+    explicit_none.eval()
+    batch = _batch()
+    assert torch.equal(
+        default._conditions(batch)["extra_tokens"],
+        explicit_none._conditions(batch)["extra_tokens"],
+    )
+
+
+def test_unknown_history_position_encoding_is_rejected():
+    try:
+        _model(history_pos_encoding="learned")
+    except ValueError as exc:
+        assert "Unsupported history_pos_encoding" in str(exc)
+    else:
+        raise AssertionError("Expected an unsupported history position encoding to raise")
 
 
 def test_audio_and_human_motion_masks_are_required_when_enabled():
