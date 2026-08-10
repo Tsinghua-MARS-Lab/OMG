@@ -6,7 +6,8 @@ from typing import Any
 
 MODEL_ARCHITECTURE_KEY = "omg_model_architecture"
 MODEL_ARCHITECTURE_FORMAT = "omg.model_architecture"
-MODEL_ARCHITECTURE_VERSION = 1
+MODEL_ARCHITECTURE_VERSION = 2
+SUPPORTED_MODEL_ARCHITECTURE_VERSIONS = {1, MODEL_ARCHITECTURE_VERSION}
 
 LEGACY_ATTENTION_CONTRACTS = {
     "none": {
@@ -35,6 +36,7 @@ def build_model_architecture_contract(model: Any) -> dict[str, Any]:
         "version": MODEL_ARCHITECTURE_VERSION,
         "denoiser_type": f"{type(denoiser).__module__}.{type(denoiser).__qualname__}",
         "frame_cond_injection": str(getattr(model, "frame_cond_injection", "")),
+        "history_pos_encoding": str(getattr(model, "history_pos_encoding", "none")),
         "attention": {
             "rotary_self_attention_qk_norm": bool(
                 getattr(denoiser, "self_attention_qk_norm", False)
@@ -52,11 +54,15 @@ def _validate_contract_shape(contract: Mapping[str, Any]) -> None:
             "Unsupported checkpoint architecture format: "
             f"{contract.get('format')!r}; expected {MODEL_ARCHITECTURE_FORMAT!r}"
         )
-    if int(contract.get("version", -1)) != MODEL_ARCHITECTURE_VERSION:
+    version = int(contract.get("version", -1))
+    if version not in SUPPORTED_MODEL_ARCHITECTURE_VERSIONS:
         raise RuntimeError(
             "Unsupported checkpoint architecture version: "
-            f"{contract.get('version')!r}; expected {MODEL_ARCHITECTURE_VERSION}"
+            f"{contract.get('version')!r}; expected one of "
+            f"{sorted(SUPPORTED_MODEL_ARCHITECTURE_VERSIONS)}"
         )
+    if version >= 2 and "history_pos_encoding" not in contract:
+        raise RuntimeError("Checkpoint architecture contract is missing history_pos_encoding")
     attention = contract.get("attention")
     if not isinstance(attention, Mapping):
         raise RuntimeError("Checkpoint architecture contract is missing the attention mapping")
@@ -106,6 +112,15 @@ def validate_checkpoint_architecture_contract(
                 raise RuntimeError(
                     f"Instantiated model {key} does not match the checkpoint architecture contract: "
                     f"expected={recorded.get(key)!r}, actual={actual[key]!r}"
+                )
+        recorded_history_pos_encoding = recorded.get("history_pos_encoding")
+        if recorded_history_pos_encoding is not None:
+            actual_history_pos_encoding = actual["history_pos_encoding"]
+            if str(recorded_history_pos_encoding) != str(actual_history_pos_encoding):
+                raise RuntimeError(
+                    "Instantiated model history positional encoding does not match the checkpoint "
+                    f"architecture contract: expected={recorded_history_pos_encoding!r}, "
+                    f"actual={actual_history_pos_encoding!r}."
                 )
 
     if actual["attention"] != expected_attention:

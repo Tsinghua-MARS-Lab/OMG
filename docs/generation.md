@@ -125,7 +125,7 @@ or `self-and-cross` and instantiate the matching denoiser. Example:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.generation.export_onnx \
-  --exp 100m_omnimodal \
+  --exp 100m \
   --ckpt_path /path/to/legacy.ckpt \
   --legacy-attention-contract cross-only \
   denoiser.self_attention_qk_norm=false \

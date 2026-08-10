@@ -13,6 +13,7 @@ diffusion_target: future
 condition_dim: ${denoiser.hidden_dim}
 text_mask_prob: 0.3
 history_mask_prob: 0.1
+history_pos_encoding: none
 use_audio: false
 audio_dim: 35
 audio_mask_prob: 0.1

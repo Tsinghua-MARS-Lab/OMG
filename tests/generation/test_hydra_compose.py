@@ -27,12 +27,12 @@ def test_compose_300m_diffusion_only():
     assert cfg.trainer.strategy == "ddp_find_unused_parameters_true"
 
 
-def test_compose_100m_omnimodal():
+def test_compose_100m_omnimodal_training():
     config_dir = str(Path(__file__).resolve().parents[2] / "configs" / "generation")
     with initialize_config_dir(version_base="1.3", config_dir=config_dir):
         cfg = compose(
             config_name="train",
-            overrides=["exp=100m_omnimodal", "data=omg_data_lerobot_omnimodal", "logger=none", "trainer=4gpu"],
+            overrides=["exp=100m", "data=omg_data_lerobot_omnimodal", "logger=none", "trainer=4gpu"],
         )
     dataset = cfg.data.dataset_opts.train.omg_lerobot_omnimodal_train
     assert cfg.model.use_audio is True
