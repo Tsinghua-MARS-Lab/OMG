@@ -353,17 +353,22 @@ class LeRobotG1MotionDataset(Dataset):
         size = len(self.samples)
         return min(self.limit_size, size) if self.limit_size is not None else size
 
+    def _local_frame_interval(self, data_start_row: int, data_end_row: int) -> tuple[int, int]:
+        start = int(data_start_row) - self.frame_dataset_offset
+        end = int(data_end_row) - self.frame_dataset_offset
+        if start < 0 or end > len(self.frame_dataset) or end <= start:
+            raise IndexError(
+                "Frame interval is outside the loaded LeRobot split shards: "
+                f"global={data_start_row}:{data_end_row} local={start}:{end} "
+                f"loaded=0:{len(self.frame_dataset)} offset={self.frame_dataset_offset}"
+            )
+        return start, end
+
     def _read_episode(self, sample: dict[str, Any]) -> dict[str, np.ndarray]:
         episode_index = int(sample["episode_index"])
         if self._cached_episode_index == episode_index and self._cached_episode_data is not None:
             return self._cached_episode_data
-        start = int(sample["data_start_row"]) - self.frame_dataset_offset
-        end = int(sample["data_end_row"]) - self.frame_dataset_offset
-        if start < 0 or end > len(self.frame_dataset) or end <= start:
-            raise IndexError(
-                "Episode frame interval is outside the loaded LeRobot split shards: "
-                f"episode={episode_index} local={start}:{end} loaded=0:{len(self.frame_dataset)}"
-            )
+        start, end = self._local_frame_interval(sample["data_start_row"], sample["data_end_row"])
         columns = ["observation.state"]
         if self.use_audio:
             columns.extend(("omg.audio.feature", "omg.condition.has_audio"))
@@ -577,8 +582,9 @@ class LeRobotG1MotionDataset(Dataset):
                 grouped_frames += episode_frames
                 episode_cursor += 1
             episode_group = selected_episodes[group_start:episode_cursor]
-            data_start = int(episode_group[0]["data_start_row"])
-            data_end = int(episode_group[-1]["data_end_row"])
+            global_data_start = int(episode_group[0]["data_start_row"])
+            global_data_end = int(episode_group[-1]["data_end_row"])
+            data_start, data_end = self._local_frame_interval(global_data_start, global_data_end)
             raw = self.frame_dataset.select_columns(["observation.state"])[data_start:data_end]
             qpos_group = torch.as_tensor(
                 np.asarray(raw["observation.state"], dtype=np.float32),
@@ -591,8 +597,8 @@ class LeRobotG1MotionDataset(Dataset):
             body_quat_group = standardize_quaternion(F.normalize(fk["body_quat_w"], dim=-1))
 
             for episode_info in episode_group:
-                local_start = int(episode_info["data_start_row"]) - data_start
-                local_end = int(episode_info["data_end_row"]) - data_start
+                local_start = int(episode_info["data_start_row"]) - global_data_start
+                local_end = int(episode_info["data_end_row"]) - global_data_start
                 qpos_all = qpos_group[local_start:local_end]
                 body_pos_all = body_pos_group[local_start:local_end]
                 body_quat_all = body_quat_group[local_start:local_end]
@@ -675,8 +681,10 @@ class LeRobotG1MotionDataset(Dataset):
                 grouped_frames += episode_frames
                 episode_cursor += 1
             episode_group = self.episodes[group_start:episode_cursor]
-            data_start = int(episode_group[0]["data_start_row"])
-            data_end = int(episode_group[-1]["data_end_row"])
+            data_start, data_end = self._local_frame_interval(
+                episode_group[0]["data_start_row"],
+                episode_group[-1]["data_end_row"],
+            )
             columns = ["observation.state"]
             if self.use_audio:
                 columns.extend(("omg.audio.feature", "omg.condition.has_audio"))

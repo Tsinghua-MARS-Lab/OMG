@@ -91,6 +91,74 @@ def _write_lerobot_fixture(root: Path, *, split: str = "train") -> str:
     return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
 
 
+def _write_nonzero_offset_fixture(root: Path, *, split: str) -> str:
+    frame_root = root / "data" / "chunk-000"
+    episode_root = root / "meta" / "episodes" / "chunk-000"
+    frame_root.mkdir(parents=True)
+    episode_root.mkdir(parents=True)
+
+    for file_index, (start, root_x) in enumerate(((0, 0.0), (5, 10.0))):
+        qpos = np.zeros((5, 36), dtype=np.float32)
+        qpos[:, 0] = root_x + np.arange(5, dtype=np.float32)
+        qpos[:, 3] = 1.0
+        pq.write_table(
+            pa.table(
+                {
+                    "observation.state": qpos.tolist(),
+                    "action": qpos.tolist(),
+                    "index": np.arange(start, start + 5, dtype=np.int64),
+                }
+            ),
+            frame_root / f"file-{file_index:03d}.parquet",
+        )
+
+    episode_columns = {
+        "length": [5],
+        "tasks": [["walk forward"]],
+        "omg/source_id": ["toy"],
+        "omg/dataset": ["toy"],
+        "omg/segment_index": [0],
+        "omg/source_start_frame": [0],
+        "omg/source_end_frame": [5],
+        "omg/has_text": [True],
+        "omg/has_audio": [False],
+        "omg/has_humanref": [False],
+    }
+    for file_index, (episode_index, start, episode_split) in enumerate(((0, 0, "prefix"), (1, 5, split))):
+        pq.write_table(
+            pa.table(
+                {
+                    "episode_index": [episode_index],
+                    "dataset_from_index": [start],
+                    "dataset_to_index": [start + 5],
+                    "omg/split": [episode_split],
+                    **episode_columns,
+                }
+            ),
+            episode_root / f"file-{file_index:03d}.parquet",
+        )
+
+    (root / "meta" / "info.json").write_text(
+        json.dumps(
+            {
+                "fps": 30,
+                "splits": {split: "1:2"},
+                "features": {
+                    "observation.state": {"dtype": "float32", "shape": [36]},
+                    "action": {"dtype": "float32", "shape": [36]},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = root / "meta" / "omg_manifest.json"
+    manifest_path.write_text(
+        json.dumps({"format": "LeRobotDataset-v3.0", "repo_id": TEST_REPO_ID}),
+        encoding="utf-8",
+    )
+    return hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+
+
 def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     dataset_root = tmp_path / "lerobot"
     manifest_sha256 = _write_lerobot_fixture(dataset_root)
@@ -164,6 +232,60 @@ def test_lerobot_reader_and_episode_cache(tmp_path: Path, monkeypatch: pytest.Mo
     assert cached_sample["mask"]["has_audio"].equal(sample["mask"]["has_audio"])
     assert cached_sample["mask"]["has_human_motion"].equal(sample["mask"]["has_human_motion"])
     assert cached_sample["caption"] == sample["caption"]
+
+
+def test_lerobot_materialization_translates_nonzero_split_frame_offsets(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "lerobot"
+    manifest_sha256 = _write_nonzero_offset_fixture(dataset_root, split="val")
+    dataset = LeRobotG1MotionDataset(
+        dataset_root=dataset_root,
+        repo_id=TEST_REPO_ID,
+        revision=TEST_REVISION,
+        manifest_sha256=manifest_sha256,
+        split="val",
+        sequence_duration=0.1,
+        fps=30.0,
+        num_prev_states=2,
+        rotation_representation="rot6d",
+        eval_num_windows=1,
+    )
+
+    group = next(dataset.iter_episode_kinematics_groups(max_frames=100, device="cpu"))
+    assert group["qpos_36"].shape == (5, 36)
+    assert group["qpos_36"][:, 0].tolist() == [10.0, 11.0, 12.0, 13.0, 14.0]
+
+    cache_root = tmp_path / "episode-cache"
+    summary = write_episode_cache(
+        dataset,
+        output_root=cache_root,
+        split="val",
+        max_frames_per_shard=100,
+        device="cpu",
+        overwrite=False,
+    )
+    assert summary["episodes"] == 1
+    assert summary["frames"] == 5
+
+
+def test_lerobot_stats_translate_nonzero_split_frame_offsets(tmp_path: Path) -> None:
+    dataset_root = tmp_path / "lerobot"
+    manifest_sha256 = _write_nonzero_offset_fixture(dataset_root, split="train")
+    dataset = LeRobotG1MotionDataset(
+        dataset_root=dataset_root,
+        repo_id=TEST_REPO_ID,
+        revision=TEST_REVISION,
+        manifest_sha256=manifest_sha256,
+        split="train",
+        sequence_duration=0.1,
+        fps=30.0,
+        num_prev_states=2,
+        rotation_representation="rot6d",
+        train_window_policy="exhaustive",
+    )
+
+    batch = next(dataset.iter_stats_batches(batch_size=2, episode_batch_frames=100))
+    assert batch["qpos_36"].shape == (2, 3, 36)
+    assert batch["qpos_36"][0, :, 0].tolist() == [10.0, 11.0, 12.0]
 
 
 def test_lerobot_benchmark_view_resolves_complete_identity(tmp_path: Path) -> None:
