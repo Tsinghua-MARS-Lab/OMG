@@ -340,13 +340,99 @@ class HoloMotionTrackerSession:
 
 
 def set_g1_qpos(model: Any, data: Any, g1_handles: dict[str, Any], qpos_36: np.ndarray) -> None:
-    mj = _require_mujoco()
-    qpos_36 = np.asarray(qpos_36, dtype=np.float32)
+    set_g1_state(model, data, g1_handles, qpos_36)
+
+
+def _model_qpos_from_g1(
+    model: Any,
+    g1_handles: dict[str, Any],
+    qpos_36: np.ndarray,
+) -> np.ndarray:
+    qpos_36 = np.asarray(qpos_36, dtype=np.float64)
     if qpos_36.shape != (36,):
         raise ValueError(f"Expected one qpos_36 frame, got {qpos_36.shape}")
-    data.qpos[:7] = qpos_36[:7]
-    data.qpos[g1_handles["joint_qpos_adr"]] = qpos_36[7:]
+    if not np.isfinite(qpos_36).all():
+        raise ValueError("qpos_36 contains non-finite values")
+    qpos = np.asarray(model.qpos0, dtype=np.float64).copy()
+    qpos[:7] = qpos_36[:7]
+    qpos[g1_handles["joint_qpos_adr"]] = qpos_36[7:]
+    return qpos
+
+
+def g1_qvel_from_qpos_pair(
+    model: Any,
+    g1_handles: dict[str, Any],
+    previous_qpos_36: np.ndarray,
+    current_qpos_36: np.ndarray,
+    *,
+    dt: float,
+) -> np.ndarray:
+    """Differentiate two canonical G1 poses using MuJoCo's joint geometry."""
+
+    mj = _require_mujoco()
+    if not np.isfinite(float(dt)) or float(dt) <= 0.0:
+        raise ValueError(f"dt must be finite and positive, got {dt}")
+    previous = _model_qpos_from_g1(model, g1_handles, previous_qpos_36)
+    current = _model_qpos_from_g1(model, g1_handles, current_qpos_36)
+    model_qvel = np.zeros(int(model.nv), dtype=np.float64)
+    mj.mj_differentiatePos(model, model_qvel, float(dt), previous, current)
+    qvel_35 = np.empty(35, dtype=np.float32)
+    qvel_35[:6] = model_qvel[:6]
+    qvel_35[6:] = model_qvel[g1_handles["joint_dof_adr"]]
+    return qvel_35
+
+
+def g1_state_from_qpos_history(
+    model: Any,
+    g1_handles: dict[str, Any],
+    history_qpos_36: np.ndarray,
+    *,
+    fps: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build the canonical tracker initial state from real motion history."""
+
+    history = np.asarray(history_qpos_36, dtype=np.float32)
+    if history.ndim != 2 or history.shape[1] != 36:
+        raise ValueError(f"Expected history_qpos_36 shape (T, 36), got {history.shape}")
+    if history.shape[0] < 2:
+        raise ValueError("Tracker initialization requires at least two history frames")
+    if not np.isfinite(history).all():
+        raise ValueError("history_qpos_36 contains non-finite values")
+    if not np.isfinite(float(fps)) or float(fps) <= 0.0:
+        raise ValueError(f"fps must be finite and positive, got {fps}")
+    initial_qpos = history[-1].copy()
+    initial_qvel = g1_qvel_from_qpos_pair(
+        model,
+        g1_handles,
+        history[-2],
+        history[-1],
+        dt=1.0 / float(fps),
+    )
+    return initial_qpos, initial_qvel
+
+
+def set_g1_state(
+    model: Any,
+    data: Any,
+    g1_handles: dict[str, Any],
+    qpos_36: np.ndarray,
+    qvel_35: np.ndarray | None = None,
+) -> None:
+    """Set canonical G1 position and optional velocity in a MuJoCo state."""
+
+    mj = _require_mujoco()
+    qpos = _model_qpos_from_g1(model, g1_handles, qpos_36)
+    data.qpos[:7] = qpos[:7]
+    data.qpos[g1_handles["joint_qpos_adr"]] = qpos[g1_handles["joint_qpos_adr"]]
     data.qvel[:] = 0.0
+    if qvel_35 is not None:
+        qvel = np.asarray(qvel_35, dtype=np.float32)
+        if qvel.shape != (35,):
+            raise ValueError(f"Expected one qvel_35 frame, got {qvel.shape}")
+        if not np.isfinite(qvel).all():
+            raise ValueError("qvel_35 contains non-finite values")
+        data.qvel[:6] = qvel[:6]
+        data.qvel[g1_handles["joint_dof_adr"]] = qvel[6:]
     mj.mj_forward(model, data)
 
 

@@ -11,6 +11,7 @@ from omg.pipeline import OnnxDiffusionPlanner, save_motion_plan
 from omg.render.mujoco import render_qpos_video
 from omg.tracking.holomotion.reference import resample_qpos
 from omg.tracking.holomotion.runner import HoloMotionRolloutRunner
+from omg.tracking.holomotion.runtime import g1_state_from_qpos_history
 
 from omg.pipeline.audio import (
     PipelineAudioCondition,
@@ -836,6 +837,13 @@ def _run_sync(
     plan_index = 0
     previous_plan = None
     previous_plan_cursor_frames = 0
+    initial_history_qpos = _motion_seed_qpos(seed_qpos, planner.num_prev_states)
+    initial_qpos, initial_qvel = g1_state_from_qpos_history(
+        runner.model,
+        runner.g1_handles,
+        initial_history_qpos,
+        fps=target_fps,
+    )
     try:
         if args.video:
             runner.append_seed_video(_motion_seed_qpos(seed_qpos, planner.num_prev_states), reference_fps=target_fps)
@@ -912,6 +920,8 @@ def _run_sync(
                 plan_id=plan_index,
                 plan_start=0,
                 plan_horizon=available_tracker_frames,
+                init_qpos_36=initial_qpos if plan_index == 0 else None,
+                init_qvel_35=initial_qvel if plan_index == 0 else None,
                 overlay_text=plan_text,
             )
             if chunk.frames <= 0:
@@ -943,6 +953,7 @@ def _run_sync(
             "total_tracker_frames": executed_frames,
             "plan_frames": plan_frames,
             "execute_frames_per_plan": "resampled_horizon",
+            "tracker_initialization": "real_history_last_state_and_finite_difference_velocity",
             "diffusion_continuation_steps": int(args.diffusion_continuation_steps),
             "audio_features": describe_pipeline_audio_features(audio_features),
             "human_motion": describe_pipeline_human_motion(human_motion),
