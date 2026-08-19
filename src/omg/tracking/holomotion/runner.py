@@ -41,6 +41,7 @@ from omg.tracking.holomotion.runtime import (  # noqa: E402
     load_holomotion_metadata,
     resolve_robot_xml,
     set_g1_qpos,
+    set_g1_state,
 )
 from omg.tracking.holomotion.video import append_video_frame, close_video, open_video_writer  # noqa: E402
 
@@ -146,8 +147,12 @@ class HoloMotionRolloutRunner:
         )
         self.video_path = Path(video_path).expanduser().resolve() if video and video_path is not None else None
 
-    def reset(self, qpos_36: np.ndarray) -> None:
-        set_g1_qpos(self.model, self.data, self.g1_handles, qpos_36)
+    def reset(
+        self,
+        qpos_36: np.ndarray,
+        qvel_35: np.ndarray | None = None,
+    ) -> None:
+        set_g1_state(self.model, self.data, self.g1_handles, qpos_36, qvel_35)
         self.tracker.reset()
         self.last_action = np.zeros(len(self.metadata.joint_names), dtype=np.float32)
         self._obs_history.clear()
@@ -229,6 +234,7 @@ class HoloMotionRolloutRunner:
         plan_start: int = 0,
         plan_horizon: int | None = None,
         init_qpos_36: np.ndarray | None = None,
+        init_qvel_35: np.ndarray | None = None,
         push_events: list[PushEvent] | None = None,
         qpos_ref_resampled: np.ndarray | None = None,
         record_buffers: bool = True,
@@ -256,7 +262,7 @@ class HoloMotionRolloutRunner:
             )
         if not self.initialized:
             init_qpos = qpos_ref[0] if init_qpos_36 is None else np.asarray(init_qpos_36, dtype=np.float32)
-            self.reset(init_qpos)
+            self.reset(init_qpos, init_qvel_35)
         ref_features = precompute_reference_features(
             qpos_ref,
             fps=self.target_fps,
