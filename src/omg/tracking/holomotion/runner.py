@@ -279,6 +279,7 @@ class HoloMotionRolloutRunner:
                 holomotion_handles=self.holomotion_handles,
                 last_action_onnx=self.last_action,
                 context_length=self.metadata.context_length,
+                obs_schema_version=self.metadata.obs_schema_version,
                 robot_history=self._obs_history,
             )
             self._clear_external_forces()
