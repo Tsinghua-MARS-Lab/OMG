@@ -50,6 +50,22 @@ def quat_rotate_inv_wxyz(q: np.ndarray, v: np.ndarray) -> np.ndarray:
     return out
 
 
+def yaw_from_quat_wxyz(q: np.ndarray) -> np.ndarray:
+    q = np.asarray(q, dtype=np.float32)
+    qw, qx, qy, qz = np.moveaxis(q, -1, 0)
+    return np.arctan2(
+        2.0 * (qw * qz + qx * qy),
+        1.0 - 2.0 * (qy * qy + qz * qz),
+    ).astype(np.float32, copy=False)
+
+
+def rot6d_from_quat_wxyz(q: np.ndarray) -> np.ndarray:
+    q = np.asarray(q, dtype=np.float32)
+    flat = q.reshape(-1, 4)
+    matrices = Rotation.from_quat(flat[:, [1, 2, 3, 0]]).as_matrix().astype(np.float32)
+    return matrices[..., :2].reshape(q.shape[:-1] + (6,)).astype(np.float32, copy=False)
+
+
 def gravity_orientation_wxyz(q: np.ndarray) -> np.ndarray:
     qw, qx, qy, qz = normalize_quat_wxyz(q)
     gravity = np.zeros(3, dtype=np.float32)
@@ -141,6 +157,7 @@ def precompute_reference_features(qpos_g1: np.ndarray, fps: float, onnx_to_g1: n
         "qpos_g1": qpos_g1.astype(np.float32, copy=False),
         "ref_dof_pos_onnx": g1_qpos_joint_slice_to_onnx(qpos_g1, onnx_to_g1),
         "ref_root_height": root_pos[:, 2].astype(np.float32, copy=False),
+        "ref_root_quat_wxyz": root_quat.astype(np.float32, copy=False),
         "ref_gravity_projection": np.stack([gravity_orientation_wxyz(q) for q in root_quat], axis=0),
         "ref_base_linvel": base_linvel.astype(np.float32, copy=False),
         "ref_base_angvel": body_angvel_from_quats(root_quat, fps),
@@ -197,6 +214,7 @@ def build_holomotion_obs(
     last_action_onnx: np.ndarray,
     *,
     context_length: int = 1,
+    obs_schema_version: str = "v1_2",
     robot_history: dict[str, list[np.ndarray]] | None = None,
 ) -> np.ndarray:
     total_frames = int(ref_features["qpos_g1"].shape[0])
@@ -209,6 +227,24 @@ def build_holomotion_obs(
     hist_idx = history_indices(frame_idx, total_frames, context_length)
     fut_idx = future_indices(frame_idx, total_frames, n_fut_frames)
     projected_gravity, root_ang_vel, dof_pos, dof_vel = current_robot_obs_terms(data, g1_handles, holomotion_handles)
+    if obs_schema_version not in {"v1_2", "v1_3"}:
+        raise ValueError(f"Unsupported HoloMotion observation schema version {obs_schema_version!r}")
+    include_heading_features = obs_schema_version == "v1_3"
+    robot_root_quat = None
+    ref_root_quat = None
+    yaw_error = None
+    if include_heading_features:
+        robot_root_quat = normalize_quat_wxyz(
+            np.asarray(data.xquat[g1_handles["pelvis_body_id"]], dtype=np.float32)
+        )
+        ref_root_quat = ref_features["ref_root_quat_wxyz"]
+        yaw_error = np.asarray(
+            [
+                np.sin(yaw_from_quat_wxyz(ref_root_quat[frame_idx]) - yaw_from_quat_wxyz(robot_root_quat)),
+                np.cos(yaw_from_quat_wxyz(ref_root_quat[frame_idx]) - yaw_from_quat_wxyz(robot_root_quat)),
+            ],
+            dtype=np.float32,
+        )
 
     if context_length == 1:
         current_terms = [
@@ -217,12 +253,19 @@ def build_holomotion_obs(
             ref_features["ref_base_angvel"][frame_idx],
             ref_features["ref_dof_pos_onnx"][frame_idx],
             np.array([ref_features["ref_root_height"][frame_idx]], dtype=np.float32),
-            projected_gravity,
-            root_ang_vel,
-            dof_pos,
-            dof_vel,
-            np.asarray(last_action_onnx, dtype=np.float32),
         ]
+        if include_heading_features:
+            assert yaw_error is not None
+            current_terms.append(yaw_error)
+        current_terms.extend(
+            [
+                projected_gravity,
+                root_ang_vel,
+                dof_pos,
+                dof_vel,
+                np.asarray(last_action_onnx, dtype=np.float32),
+            ]
+        )
     else:
         if robot_history is None:
             raise ValueError("robot_history is required when context_length > 1")
@@ -232,23 +275,53 @@ def build_holomotion_obs(
             ref_features["ref_base_angvel"][hist_idx].reshape(-1),
             ref_features["ref_dof_pos_onnx"][hist_idx].reshape(-1),
             ref_features["ref_root_height"][hist_idx].reshape(-1),
-            _append_history(robot_history, "projected_gravity", projected_gravity, context_length).reshape(-1),
-            _append_history(robot_history, "root_ang_vel", root_ang_vel, context_length).reshape(-1),
-            _append_history(robot_history, "dof_pos", dof_pos, context_length).reshape(-1),
-            _append_history(robot_history, "dof_vel", dof_vel, context_length).reshape(-1),
-            _append_history(
-                robot_history,
-                "last_action",
-                np.asarray(last_action_onnx, dtype=np.float32),
-                context_length,
-            ).reshape(-1),
         ]
+        if include_heading_features:
+            assert yaw_error is not None
+            current_terms.append(
+                _append_history(robot_history, "yaw_error", yaw_error, context_length).reshape(-1)
+            )
+        current_terms.extend(
+            [
+                _append_history(robot_history, "projected_gravity", projected_gravity, context_length).reshape(-1),
+                _append_history(robot_history, "root_ang_vel", root_ang_vel, context_length).reshape(-1),
+                _append_history(robot_history, "dof_pos", dof_pos, context_length).reshape(-1),
+                _append_history(robot_history, "dof_vel", dof_vel, context_length).reshape(-1),
+                _append_history(
+                    robot_history,
+                    "last_action",
+                    np.asarray(last_action_onnx, dtype=np.float32),
+                    context_length,
+                ).reshape(-1),
+            ]
+        )
     current = np.concatenate(current_terms, axis=0)
-    future = np.concatenate([
+    future_terms = [
         ref_features["ref_dof_pos_onnx"][fut_idx].reshape(-1),
         ref_features["ref_root_height"][fut_idx].reshape(-1),
         ref_features["ref_gravity_projection"][fut_idx].reshape(-1),
         ref_features["ref_base_linvel"][fut_idx].reshape(-1),
         ref_features["ref_base_angvel"][fut_idx].reshape(-1),
-    ], axis=0)
+    ]
+    if include_heading_features:
+        assert ref_root_quat is not None
+        assert robot_root_quat is not None
+        future_yaw_delta = yaw_from_quat_wxyz(ref_root_quat[fut_idx]) - yaw_from_quat_wxyz(
+            ref_root_quat[frame_idx]
+        )
+        future_terms.append(
+            np.stack(
+                [np.sin(future_yaw_delta), np.cos(future_yaw_delta)],
+                axis=-1,
+            ).reshape(-1)
+        )
+        relative_root_quat = np.stack(
+            [
+                normalize_quat_wxyz(quat_mul_wxyz(quat_conj_wxyz(robot_root_quat), quat))
+                for quat in ref_root_quat[fut_idx]
+            ],
+            axis=0,
+        )
+        future_terms.append(rot6d_from_quat_wxyz(relative_root_quat).reshape(-1))
+    future = np.concatenate(future_terms, axis=0)
     return np.concatenate([current, future], axis=0).astype(np.float32, copy=False)[None, :]

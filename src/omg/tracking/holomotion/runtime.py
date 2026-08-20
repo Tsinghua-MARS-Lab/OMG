@@ -36,6 +36,24 @@ class HoloMotionMetadata:
     joint_damping: np.ndarray
     n_fut_frames: int
     context_length: int = 1
+    obs_schema_version: str = "v1_2"
+
+
+@dataclass(frozen=True)
+class HoloMotionObsSchema:
+    version: str
+    current_dim: int
+    future_dim: int
+
+
+HOLOMOTION_OBS_SCHEMAS = (
+    HoloMotionObsSchema(version="v1_2", current_dim=132, future_dim=39),
+    HoloMotionObsSchema(
+        version="v1_3",
+        current_dim=134,
+        future_dim=47,
+    ),
+)
 
 
 @dataclass
@@ -129,31 +147,67 @@ def infer_holomotion_obs_schema(
     context_length: int | None = None,
     n_fut_frames: int | None = None,
 ) -> tuple[int, int]:
-    current_dim = 132
-    future_dim = 39
+    _, context_length, n_fut_frames = infer_holomotion_obs_contract(
+        obs_dim,
+        context_length=context_length,
+        n_fut_frames=n_fut_frames,
+    )
+    return context_length, n_fut_frames
+
+
+def infer_holomotion_obs_contract(
+    obs_dim: int,
+    *,
+    context_length: int | None = None,
+    n_fut_frames: int | None = None,
+    obs_schema_version: str | None = None,
+) -> tuple[HoloMotionObsSchema, int, int]:
+    schemas = HOLOMOTION_OBS_SCHEMAS
+    if obs_schema_version is not None:
+        schemas = tuple(schema for schema in schemas if schema.version == obs_schema_version)
+        if not schemas:
+            supported = ", ".join(schema.version for schema in HOLOMOTION_OBS_SCHEMAS)
+            raise ValueError(
+                f"Unsupported HoloMotion observation schema version {obs_schema_version!r}; "
+                f"expected one of: {supported}"
+            )
+
     if context_length is not None or n_fut_frames is not None:
         if context_length is None or n_fut_frames is None:
             raise ValueError("context_length and n_fut_frames must be provided together")
-        expected = int(context_length) * current_dim + int(n_fut_frames) * future_dim
-        if expected != int(obs_dim):
-            raise ValueError(
-                f"HoloMotion obs dim {obs_dim} does not match context_length={context_length} "
-                f"and n_fut_frames={n_fut_frames} (expected {expected})"
-            )
         if int(context_length) <= 0 or int(n_fut_frames) <= 0:
             raise ValueError("context_length and n_fut_frames must be positive")
-        return int(context_length), int(n_fut_frames)
+        matches = [
+            schema
+            for schema in schemas
+            if int(context_length) * schema.current_dim + int(n_fut_frames) * schema.future_dim
+            == int(obs_dim)
+        ]
+        if len(matches) != 1:
+            version_text = f" for schema {obs_schema_version!r}" if obs_schema_version is not None else ""
+            raise ValueError(
+                f"HoloMotion obs dim {obs_dim} does not match context_length={context_length} "
+                f"and n_fut_frames={n_fut_frames}{version_text} under exactly one supported schema"
+            )
+        return matches[0], int(context_length), int(n_fut_frames)
 
-    candidates: list[tuple[int, int]] = []
-    for fut in range(1, max(2, int(obs_dim) // future_dim + 1)):
-        rem = int(obs_dim) - future_dim * fut
-        if rem <= 0:
-            break
-        if rem % current_dim == 0:
-            ctx = rem // current_dim
-            if ctx > 0:
-                candidates.append((int(ctx), int(fut)))
+    candidates: list[tuple[HoloMotionObsSchema, int, int]] = []
+    for schema in schemas:
+        for fut in range(1, max(2, int(obs_dim) // schema.future_dim + 1)):
+            rem = int(obs_dim) - schema.future_dim * fut
+            if rem <= 0:
+                break
+            if rem % schema.current_dim == 0:
+                ctx = rem // schema.current_dim
+                if ctx > 0:
+                    candidates.append((schema, int(ctx), int(fut)))
     if len(candidates) != 1:
+        if obs_schema_version is not None:
+            raise ValueError(
+                f"HoloMotion obs dim {obs_dim} does not match exactly one configuration for "
+                f"observation schema version {obs_schema_version!r}; export metadata or "
+                "neighboring config.yaml must provide context_length and n_fut_frames"
+            )
         raise ValueError(
             f"Unsupported or ambiguous HoloMotion obs dim {obs_dim}; "
             "export metadata or neighboring config.yaml must provide context_length and n_fut_frames"
@@ -215,10 +269,11 @@ def load_holomotion_metadata(session: Any) -> HoloMotionMetadata:
     config_context, config_future = (None, None)
     if meta_context is None or meta_future is None:
         config_context, config_future = _load_obs_schema_from_neighbor_config(session)
-    context_length, n_fut_frames = infer_holomotion_obs_schema(
+    obs_schema, context_length, n_fut_frames = infer_holomotion_obs_contract(
         int(obs_input.shape[-1]),
         context_length=meta_context if meta_context is not None else config_context,
         n_fut_frames=meta_future if meta_future is not None else config_future,
+        obs_schema_version=meta.get("obs_schema_version"),
     )
     return HoloMotionMetadata(
         joint_names=parse_joint_names(meta["joint_names"]),
@@ -228,6 +283,7 @@ def load_holomotion_metadata(session: Any) -> HoloMotionMetadata:
         joint_damping=parse_float_array(meta[damping_key], damping_key),
         n_fut_frames=n_fut_frames,
         context_length=context_length,
+        obs_schema_version=obs_schema.version,
     )
 
 
