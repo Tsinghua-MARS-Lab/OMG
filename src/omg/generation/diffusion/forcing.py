@@ -220,10 +220,18 @@ class DiffusionForcingProcess(nn.Module):
         null_conditions: dict | None = None,
         cfg_scale: float | None = None,
         cfg_branches: list[tuple[dict, float]] | None = None,
+        initial_noise: torch.Tensor | None = None,
     ) -> torch.Tensor:
         ref = _condition_tensor(conditions)
         batch_size, seq_len, _ = shape
-        x = torch.randn(shape, device=ref.device, dtype=ref.dtype)
+        if initial_noise is None:
+            x = torch.randn(shape, device=ref.device, dtype=ref.dtype)
+        else:
+            if tuple(initial_noise.shape) != tuple(shape):
+                raise ValueError(
+                    f"initial_noise has shape {tuple(initial_noise.shape)}, expected {tuple(shape)}"
+                )
+            x = initial_noise.to(device=ref.device, dtype=ref.dtype).clone()
         history_len = 0 if history is None else int(history.shape[1])
         if valid_mask is None:
             valid_mask = torch.ones(batch_size, seq_len, device=ref.device, dtype=torch.bool)

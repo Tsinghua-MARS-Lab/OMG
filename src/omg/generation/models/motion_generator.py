@@ -813,6 +813,7 @@ class MotionGenerator(pl.LightningModule):
         cfg_text_scale: float | None = None,
         cfg_audio_scale: float | None = None,
         cfg_human_scale: float | None = None,
+        initial_noise: torch.Tensor | None = None,
     ) -> torch.Tensor:
         device = next(self.parameters()).device
         valid_future = torch.ones(batch["history_features"].shape[0], future_len, dtype=torch.bool, device=device)
@@ -852,6 +853,7 @@ class MotionGenerator(pl.LightningModule):
                 null_conditions=null_conditions,
                 cfg_scale=sample_cfg_scale,
                 cfg_branches=cfg_branches,
+                initial_noise=initial_noise,
             )
 
         history = batch["history_features"].to(device=device)
@@ -872,6 +874,7 @@ class MotionGenerator(pl.LightningModule):
             null_conditions=null_conditions,
             cfg_scale=sample_cfg_scale,
             cfg_branches=cfg_branches,
+            initial_noise=initial_noise,
         )
         return sample[:, history.shape[1] :]
 
@@ -884,6 +887,7 @@ class MotionGenerator(pl.LightningModule):
         cfg_text_scale: float | None = None,
         cfg_audio_scale: float | None = None,
         cfg_human_scale: float | None = None,
+        initial_noise_chunks: list[torch.Tensor] | tuple[torch.Tensor, ...] | None = None,
     ) -> dict[str, torch.Tensor | None]:
         device = next(self.parameters()).device
         chunk_len = int(self.representation.sequence_length)
@@ -950,6 +954,12 @@ class MotionGenerator(pl.LightningModule):
         qpos_chunks = []
         feature_chunks = []
         frame_offset = 0
+        expected_chunks = (frames_left + chunk_len - 1) // chunk_len
+        if initial_noise_chunks is not None and len(initial_noise_chunks) != expected_chunks:
+            raise ValueError(
+                f"initial_noise_chunks has {len(initial_noise_chunks)} entries, expected {expected_chunks}"
+            )
+        chunk_index = 0
         while frames_left > 0:
             curr_len = min(chunk_len, frames_left)
             sample_batch = {
@@ -978,6 +988,11 @@ class MotionGenerator(pl.LightningModule):
                 cfg_text_scale=cfg_text_scale,
                 cfg_audio_scale=cfg_audio_scale,
                 cfg_human_scale=cfg_human_scale,
+                initial_noise=(
+                    None
+                    if initial_noise_chunks is None
+                    else initial_noise_chunks[chunk_index]
+                ),
             )
             decoded = self.representation.decode(future_norm)
             qpos = self.representation.compose_qpos_36(decoded, canon_root_pos, canon_root_quat)
@@ -995,6 +1010,7 @@ class MotionGenerator(pl.LightningModule):
             )
             frames_left -= curr_len
             frame_offset += curr_len
+            chunk_index += 1
 
         return {
             "motion_features": torch.cat(feature_chunks, dim=1),

@@ -107,6 +107,7 @@ class HoloMotionRolloutRunner:
         camera_distance: float = 4.0,
         camera_elevation: float = -20.0,
         overlay_text: str = "",
+        session: Any | None = None,
     ):
         self.holomotion_onnx = Path(holomotion_onnx).expanduser().resolve()
         self.target_fps = float(target_fps)
@@ -121,7 +122,11 @@ class HoloMotionRolloutRunner:
         self.model = mujoco.MjModel.from_xml_path(str(self.robot_xml))
         self.data = mujoco.MjData(self.model)
         self.g1_handles = build_g1_state_handles(self.model)
-        self.session = build_onnx_session(self.holomotion_onnx, providers)
+        self.session = (
+            build_onnx_session(self.holomotion_onnx, providers)
+            if session is None
+            else session
+        )
         self.metadata = load_holomotion_metadata(self.session)
         self.holomotion_handles = build_holomotion_handles(self.model, self.metadata)
         self.tracker = HoloMotionTrackerSession(self.session, self.metadata)
