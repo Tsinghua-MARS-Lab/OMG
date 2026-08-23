@@ -244,6 +244,10 @@ class HoloMotionRolloutRunner:
         qpos_ref_resampled: np.ndarray | None = None,
         record_buffers: bool = True,
         frame_callback: Callable[[int, np.ndarray, np.ndarray, np.ndarray], None] | None = None,
+        stop_condition: Callable[
+            [int, np.ndarray, np.ndarray, np.ndarray], bool
+        ]
+        | None = None,
         overlay_text: str | None = None,
         overlay_text_by_frame: list[str] | tuple[str, ...] | np.ndarray | None = None,
     ) -> TrackerChunkResult:
@@ -301,21 +305,34 @@ class HoloMotionRolloutRunner:
                 )
             finally:
                 self._clear_external_forces()
-            self.executed_qpos_36.append(extract_g1_qpos(self.data, self.g1_handles))
+            executed_frame = extract_g1_qpos(self.data, self.g1_handles)
+            reference_frame = np.asarray(qpos_ref[frame_idx], dtype=np.float32)
+            action_frame = np.asarray(self.last_action, dtype=np.float32)
+            self.executed_qpos_36.append(executed_frame)
             plan_cursor = int(plan_start) + int(frame_idx)
             if record_buffers:
-                self.reference_qpos_36.append(np.asarray(qpos_ref[frame_idx], dtype=np.float32))
-                self.actions.append(np.asarray(self.last_action, dtype=np.float32))
+                self.reference_qpos_36.append(reference_frame)
+                self.actions.append(action_frame)
                 self.plan_cursor.append(plan_cursor)
                 self.plan_id.append(int(plan_id))
             
             if frame_callback is not None:
                 frame_callback(
                     plan_cursor,
-                    self.executed_qpos_36[-1],
-                    self.reference_qpos_36[-1],
-                    self.actions[-1],
+                    executed_frame,
+                    reference_frame,
+                    action_frame,
                 )
+            stop_requested = bool(
+                stop_condition(
+                    plan_cursor,
+                    executed_frame,
+                    reference_frame,
+                    action_frame,
+                )
+                if stop_condition is not None
+                else False
+            )
             if self.writer is not None:
                 if overlay_text_by_frame is not None:
                     frame_overlay_text = str(overlay_text_by_frame[frame_idx])
@@ -336,8 +353,10 @@ class HoloMotionRolloutRunner:
                     camera_elevation=self.camera_elevation,
                     overlay_lines=overlay_lines,
                 )
+            if stop_requested:
+                break
         executed = np.asarray(self.executed_qpos_36[start:], dtype=np.float32)
-        return TrackerChunkResult(frames=frame_limit, qpos_36=executed)
+        return TrackerChunkResult(frames=int(executed.shape[0]), qpos_36=executed)
 
     def save(
         self,
