@@ -455,6 +455,10 @@ class OnnxDiffusionPlanner:
 
     def cache_text_conditions(self, text: str) -> None:
         text_key = str(text)
+        if text_key in self._text_condition_cache:
+            return
+        if len(self._text_condition_cache) >= 128:
+            del self._text_condition_cache[next(iter(self._text_condition_cache))]
         self._text_condition_cache[text_key] = self._encode_text(text_key)
 
     def _text_conditions(self, text: str) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
@@ -462,7 +466,8 @@ class OnnxDiffusionPlanner:
         cached = self._text_condition_cache.get(text_key)
         if cached is not None:
             return cached
-        return self._encode_text(text_key)
+        self.cache_text_conditions(text_key)
+        return self._text_condition_cache[text_key]
 
     def _history_features_from_qpos_fast(
         self,
