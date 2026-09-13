@@ -43,7 +43,7 @@ def _diffusion_tensorrt_cache_path(args: argparse.Namespace, output_dir: Path) -
 def _diffusion_dit_cache(args: argparse.Namespace) -> bool:
     if args.dit_cache is not None:
         return bool(args.dit_cache)
-    return args.mode == "async"
+    return True
 
 
 def _parse_args() -> argparse.Namespace:
@@ -114,7 +114,7 @@ def _parse_args() -> argparse.Namespace:
         "--dit-cache",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Enable DreamZero-style DiT cache step skipping. Defaults to enabled for --mode async and disabled otherwise.",
+        help="Approximate DiT step caching (enabled by default). Use --no-dit-cache for uncached evaluation.",
     )
     parser.add_argument("--dit-cache-threshold", type=float, default=0.995)
     parser.add_argument("--dit-cache-warmup-steps", type=int, default=4)

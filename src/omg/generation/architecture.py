@@ -29,6 +29,36 @@ LEGACY_ATTENTION_CONTRACTS = {
 }
 
 
+def apply_checkpoint_architecture_config(cfg, checkpoint, *, explicit_overrides=(), legacy_attention_contract=None):
+    """Resolve semantic architecture fields before instantiation; reject user conflicts."""
+    from omegaconf import OmegaConf
+
+    recorded = checkpoint.get(MODEL_ARCHITECTURE_KEY)
+    if recorded is None:
+        if legacy_attention_contract not in LEGACY_ATTENTION_CONTRACTS:
+            raise RuntimeError("Legacy checkpoint requires --legacy-attention-contract; do not infer QK normalization from weights")
+        explicit = {item.split("=", 1)[0].lstrip("+") for item in explicit_overrides}
+        if "model.history_pos_encoding" not in explicit:
+            raise RuntimeError("Legacy checkpoint requires explicit model.history_pos_encoding=none|sinusoidal|rope from its training configuration")
+        return
+    _validate_contract_shape(recorded)
+    if "history_pos_encoding" not in recorded:
+        explicit = {item.split("=", 1)[0].lstrip("+") for item in explicit_overrides}
+        if "model.history_pos_encoding" not in explicit:
+            raise RuntimeError("Version-1 checkpoint requires explicit model.history_pos_encoding from training")
+    values = {
+        "denoiser.self_attention_qk_norm": recorded["attention"]["rotary_self_attention_qk_norm"],
+        "denoiser.cross_attention_qk_norm": recorded["attention"]["cross_attention_qk_norm"],
+        "model.history_pos_encoding": recorded.get("history_pos_encoding", OmegaConf.select(cfg, "model.history_pos_encoding")),
+        "model.frame_cond_injection": recorded["frame_cond_injection"],
+    }
+    explicit = {item.split("=", 1)[0].lstrip("+") for item in explicit_overrides}
+    for key, value in values.items():
+        if key in explicit and OmegaConf.select(cfg, key) != value:
+            raise RuntimeError(f"Explicit {key} conflicts with checkpoint: {OmegaConf.select(cfg, key)!r} != {value!r}")
+        OmegaConf.update(cfg, key, value)
+
+
 def build_model_architecture_contract(model: Any) -> dict[str, Any]:
     denoiser = model.denoiser
     return {

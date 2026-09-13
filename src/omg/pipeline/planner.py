@@ -288,7 +288,7 @@ class OnnxDiffusionPlanner:
         compile_history_encoder: bool | None = None,
         tensorrt_fp16: bool = False,
         tensorrt_engine_cache_path: str | Path | None = None,
-        dit_cache: bool = False,
+        dit_cache: bool = True,
         dit_cache_threshold: float = 0.995,
         dit_cache_warmup_steps: int = 4,
         dit_cache_max_consecutive: int = 2,
@@ -455,6 +455,10 @@ class OnnxDiffusionPlanner:
 
     def cache_text_conditions(self, text: str) -> None:
         text_key = str(text)
+        if text_key in self._text_condition_cache:
+            return
+        if len(self._text_condition_cache) >= 128:
+            del self._text_condition_cache[next(iter(self._text_condition_cache))]
         self._text_condition_cache[text_key] = self._encode_text(text_key)
 
     def _text_conditions(self, text: str) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
@@ -462,7 +466,8 @@ class OnnxDiffusionPlanner:
         cached = self._text_condition_cache.get(text_key)
         if cached is not None:
             return cached
-        return self._encode_text(text_key)
+        self.cache_text_conditions(text_key)
+        return self._text_condition_cache[text_key]
 
     def _history_features_from_qpos_fast(
         self,
@@ -678,6 +683,15 @@ class OnnxDiffusionPlanner:
             value is not None
             for value in (cfg_text_scale, cfg_audio_scale, cfg_human_scale)
         )
+        # With only text guidance, separate CFG is algebraically joint CFG.
+        # Batch conditional/null together instead of duplicating each branch.
+        if separate_cfg and cfg_text_scale is not None and not cfg_audio_scale and not cfg_human_scale:
+            return self._onnx_joint_cfg_pred(
+                x, model_timestep, valid_mask, history_features,
+                cond_text, null_text, float(cfg_text_scale),
+                cond_audio=null_audio, null_audio=null_audio,
+                cond_human_motion=null_human_motion, null_human_motion=null_human_motion,
+            )
         if not separate_cfg:
             return self._onnx_joint_cfg_pred(
                 x,
@@ -1306,6 +1320,9 @@ class OnnxDiffusionPlanner:
         }
         metadata = {
             "diffusion_onnx": str(self.onnx_path),
+            "model_architecture": self.metadata.get("model_architecture"),
+            "text_condition_cached": str(text) in self._text_condition_cache,
+            "cfg_routing": "joint_text" if resolved_cfg_text_scale is not None and not resolved_cfg_audio_scale and not resolved_cfg_human_scale else ("separate" if separate_cfg else "joint"),
             "providers": self.providers,
             "active_providers": list(self.session.get_providers()),
             "batch_size": self.batch_size,

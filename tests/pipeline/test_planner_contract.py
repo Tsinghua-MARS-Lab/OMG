@@ -188,7 +188,7 @@ def test_pipeline_async_defaults_to_tensorrt_fp16_and_cache(tmp_path):
     args.mode = "sync"
     assert _diffusion_tensorrt_fp16(args) is False
     assert _diffusion_tensorrt_cache_path(args, tmp_path) is None
-    assert _diffusion_dit_cache(args) is False
+    assert _diffusion_dit_cache(args) is True
 
     args.dit_cache = False
     args.mode = "async"

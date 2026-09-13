@@ -15,6 +15,7 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 
 from omg.data.datamodule import motion_collate_fn
+from omg.generation.architecture import apply_checkpoint_architecture_config, validate_checkpoint_architecture_contract
 
 
 def _config_dir() -> Path:
@@ -31,9 +32,11 @@ def _load_text(args: argparse.Namespace) -> str:
     return text
 
 
-def _load_model(cfg, ckpt_path: str):
-    model = instantiate(cfg.model)
+def _load_model(cfg, ckpt_path: str, *, explicit_overrides=(), legacy_attention_contract=None):
     payload = torch.load(ckpt_path, map_location="cpu")
+    apply_checkpoint_architecture_config(cfg, payload, explicit_overrides=explicit_overrides, legacy_attention_contract=legacy_attention_contract)
+    model = instantiate(cfg.model)
+    validate_checkpoint_architecture_contract(payload, model, legacy_attention_contract=legacy_attention_contract)
     state_dict = payload.get("state_dict", payload)
     try:
         model.load_state_dict(state_dict, strict=True)
@@ -638,6 +641,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--follow_mode", choices=["none", "xy", "xyz"], default="xy")
     parser.add_argument("--scene_preset", choices=["minimal", "studio"], default="studio")
     parser.add_argument("--title", default="G1 Motion")
+    parser.add_argument("--legacy-attention-contract", choices=["none", "cross-only", "self-only", "self-and-cross"])
     parser.add_argument("overrides", nargs="*", help="Additional Hydra overrides, e.g. data=... model.text_encoder.model_name=...")
     return parser.parse_args()
 
@@ -666,7 +670,10 @@ def main() -> None:
     _apply_condition_injection_override(cfg, args)
 
     print(f"[INFO] Checkpoint path: {Path(args.ckpt_path).resolve()}")
-    model = _load_model(cfg, args.ckpt_path)
+    architecture_overrides = list(args.overrides)
+    if args.condition_injection is not None:
+        architecture_overrides.append("model.frame_cond_injection=" + _condition_injection_from_arg(args.condition_injection))
+    model = _load_model(cfg, args.ckpt_path, explicit_overrides=architecture_overrides, legacy_attention_contract=args.legacy_attention_contract)
     print(_condition_injection_banner(getattr(model, "frame_cond_injection", None), "loaded model"))
     requested_num_frames = int(args.num_frames)
     sample_num_frames = _round_up_frames(requested_num_frames, int(model.representation.sequence_length))

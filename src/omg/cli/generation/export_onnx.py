@@ -10,6 +10,7 @@ from hydra.utils import instantiate
 
 from omg.generation.architecture import (
     LEGACY_ATTENTION_CONTRACTS,
+    apply_checkpoint_architecture_config,
     validate_checkpoint_architecture_contract,
 )
 from omg.generation.export import export_denoiser_step_onnx, metadata_sidecar_path
@@ -26,9 +27,11 @@ def _load_model(
     *,
     strict: bool,
     legacy_attention_contract: str | None,
+    explicit_overrides=(),
 ):
-    model = instantiate(cfg.model)
     payload = torch.load(ckpt_path, map_location="cpu")
+    apply_checkpoint_architecture_config(cfg, payload, explicit_overrides=explicit_overrides, legacy_attention_contract=legacy_attention_contract)
+    model = instantiate(cfg.model)
     architecture = validate_checkpoint_architecture_contract(
         payload,
         model,
@@ -108,6 +111,7 @@ def main() -> None:
         device=device,
         strict=not bool(args.allow_partial_ckpt),
         legacy_attention_contract=args.legacy_attention_contract,
+        explicit_overrides=args.overrides,
     )
     metadata = export_denoiser_step_onnx(
         model,
