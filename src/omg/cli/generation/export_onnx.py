@@ -30,7 +30,7 @@ def _load_model(
     explicit_overrides=(),
 ):
     payload = torch.load(ckpt_path, map_location="cpu")
-    apply_checkpoint_architecture_config(cfg, payload, explicit_overrides=explicit_overrides)
+    apply_checkpoint_architecture_config(cfg, payload, explicit_overrides=explicit_overrides, legacy_attention_contract=legacy_attention_contract)
     model = instantiate(cfg.model)
     architecture = validate_checkpoint_architecture_contract(
         payload,

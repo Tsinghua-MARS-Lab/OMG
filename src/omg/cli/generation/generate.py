@@ -34,7 +34,7 @@ def _load_text(args: argparse.Namespace) -> str:
 
 def _load_model(cfg, ckpt_path: str, *, explicit_overrides=(), legacy_attention_contract=None):
     payload = torch.load(ckpt_path, map_location="cpu")
-    apply_checkpoint_architecture_config(cfg, payload, explicit_overrides=explicit_overrides)
+    apply_checkpoint_architecture_config(cfg, payload, explicit_overrides=explicit_overrides, legacy_attention_contract=legacy_attention_contract)
     model = instantiate(cfg.model)
     validate_checkpoint_architecture_contract(payload, model, legacy_attention_contract=legacy_attention_contract)
     state_dict = payload.get("state_dict", payload)
