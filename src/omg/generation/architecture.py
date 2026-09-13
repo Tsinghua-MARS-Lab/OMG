@@ -29,6 +29,27 @@ LEGACY_ATTENTION_CONTRACTS = {
 }
 
 
+def apply_checkpoint_architecture_config(cfg, checkpoint, *, explicit_overrides=()):
+    """Resolve semantic architecture fields before instantiation; reject user conflicts."""
+    from omegaconf import OmegaConf
+
+    recorded = checkpoint.get(MODEL_ARCHITECTURE_KEY)
+    if recorded is None:
+        return  # Legacy declarations are handled separately, never inferred from tensors.
+    _validate_contract_shape(recorded)
+    values = {
+        "denoiser.self_attention_qk_norm": recorded["attention"]["rotary_self_attention_qk_norm"],
+        "denoiser.cross_attention_qk_norm": recorded["attention"]["cross_attention_qk_norm"],
+        "model.history_pos_encoding": recorded.get("history_pos_encoding", "none"),
+        "model.frame_cond_injection": recorded["frame_cond_injection"],
+    }
+    explicit = {item.split("=", 1)[0].lstrip("+") for item in explicit_overrides}
+    for key, value in values.items():
+        if key in explicit and OmegaConf.select(cfg, key) != value:
+            raise RuntimeError(f"Explicit {key} conflicts with checkpoint: {OmegaConf.select(cfg, key)!r} != {value!r}")
+        OmegaConf.update(cfg, key, value)
+
+
 def build_model_architecture_contract(model: Any) -> dict[str, Any]:
     denoiser = model.denoiser
     return {
