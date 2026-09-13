@@ -1320,6 +1320,9 @@ class OnnxDiffusionPlanner:
         }
         metadata = {
             "diffusion_onnx": str(self.onnx_path),
+            "model_architecture": self.metadata.get("model_architecture"),
+            "text_condition_cached": str(text) in self._text_condition_cache,
+            "cfg_routing": "joint_text" if resolved_cfg_text_scale is not None and not resolved_cfg_audio_scale and not resolved_cfg_human_scale else ("separate" if separate_cfg else "joint"),
             "providers": self.providers,
             "active_providers": list(self.session.get_providers()),
             "batch_size": self.batch_size,
