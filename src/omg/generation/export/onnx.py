@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from functools import wraps
 import json
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,21 @@ EXPORT_METADATA_KEY = "omg_export_metadata"
 EXPORT_FORMAT = "omg.denoiser_step"
 EXPORT_FORMAT_VERSION = 1
 TENSORRT_BLOCKED_ONNX_OPS = frozenset({"SplitToSequence", "SequenceAt", "ConcatFromSequence"})
+
+
+def _ieee_fp32_validation(fn):
+    @wraps(fn)
+    def checked(*args, **kwargs):
+        precision = torch.get_float32_matmul_precision()
+        cudnn_tf32 = torch.backends.cudnn.allow_tf32
+        try:
+            torch.set_float32_matmul_precision("highest")
+            torch.backends.cudnn.allow_tf32 = False
+            return fn(*args, **kwargs)
+        finally:
+            torch.set_float32_matmul_precision(precision)
+            torch.backends.cudnn.allow_tf32 = cudnn_tf32
+    return checked
 
 
 def _rotate_half_export(x: torch.Tensor) -> torch.Tensor:
@@ -342,6 +358,7 @@ class DenoiserStepExportModel(nn.Module):
         return pred + valid_mask_anchor
 
 
+@_ieee_fp32_validation
 def validate_export_wrapper_parity(
     motion_model: nn.Module,
     wrapper: DenoiserStepExportModel,
@@ -378,6 +395,7 @@ def validate_export_wrapper_parity(
     return metrics
 
 
+@_ieee_fp32_validation
 def validate_exported_onnx_parity(
     onnx_path: str | Path,
     wrapper: DenoiserStepExportModel,
