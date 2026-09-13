@@ -69,7 +69,8 @@ def _transcode_mp4_h264_in_place(path: Path) -> None:
         return
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
-        return
+        from imageio_ffmpeg import get_ffmpeg_exe
+        ffmpeg = get_ffmpeg_exe()
     temp_path = path.with_name(f"{path.stem}.h264.tmp{path.suffix}")
     cmd = [
         ffmpeg,
@@ -80,6 +81,8 @@ def _transcode_mp4_h264_in_place(path: Path) -> None:
         str(path),
         "-c:v",
         "libx264",
+        "-vf",
+        "pad=ceil(iw/2)*2:ceil(ih/2)*2",
         "-pix_fmt",
         "yuv420p",
         "-movflags",
@@ -92,7 +95,7 @@ def _transcode_mp4_h264_in_place(path: Path) -> None:
     except Exception as exc:
         if temp_path.exists():
             temp_path.unlink()
-        print(f"[WARN] Failed to transcode {path} to H.264; keeping original mp4v video: {exc}")
+        raise RuntimeError(f"Failed to encode compatible H.264 video: {path}") from exc
 
 
 def _load_qpos(path: str | Path) -> torch.Tensor:

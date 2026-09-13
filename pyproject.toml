@@ -44,6 +44,7 @@ benchmark = [
 ]
 tracking = [
   "imageio>=2.34,<3",
+  "imageio-ffmpeg>=0.5,<1",
   "mujoco>=3.7,<3.8",
   "onnxruntime-gpu>=1.18,<2",
   "tensorrt-cu12>=10.16,<10.17",
@@ -62,6 +63,7 @@ dev = [
 all = [
   "datasets>=4,<5",
   "imageio>=2.34,<3",
+  "imageio-ffmpeg>=0.5,<1",
   "huggingface-hub>=0.34,<1",
   "matplotlib>=3.10,<3.11",
   "mujoco>=3.7,<3.8",
