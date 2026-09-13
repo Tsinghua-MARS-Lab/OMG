@@ -288,7 +288,7 @@ class OnnxDiffusionPlanner:
         compile_history_encoder: bool | None = None,
         tensorrt_fp16: bool = False,
         tensorrt_engine_cache_path: str | Path | None = None,
-        dit_cache: bool = False,
+        dit_cache: bool = True,
         dit_cache_threshold: float = 0.995,
         dit_cache_warmup_steps: int = 4,
         dit_cache_max_consecutive: int = 2,
