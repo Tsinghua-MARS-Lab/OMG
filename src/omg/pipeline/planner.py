@@ -678,6 +678,15 @@ class OnnxDiffusionPlanner:
             value is not None
             for value in (cfg_text_scale, cfg_audio_scale, cfg_human_scale)
         )
+        # With only text guidance, separate CFG is algebraically joint CFG.
+        # Batch conditional/null together instead of duplicating each branch.
+        if separate_cfg and cfg_text_scale is not None and not cfg_audio_scale and not cfg_human_scale:
+            return self._onnx_joint_cfg_pred(
+                x, model_timestep, valid_mask, history_features,
+                cond_text, null_text, float(cfg_text_scale),
+                cond_audio=null_audio, null_audio=null_audio,
+                cond_human_motion=null_human_motion, null_human_motion=null_human_motion,
+            )
         if not separate_cfg:
             return self._onnx_joint_cfg_pred(
                 x,
