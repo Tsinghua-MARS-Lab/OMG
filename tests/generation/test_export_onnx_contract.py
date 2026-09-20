@@ -5,6 +5,7 @@ import torch.nn as nn
 import pytest
 
 from omg.generation.denoisers.transformer import _rotate_half
+from omg.generation.conditions.position import SinusoidalPositionEncoding
 from omg.generation.export import (
     DenoiserStepExportModel,
     build_export_metadata,
@@ -56,7 +57,7 @@ class _FakeDenoiser(nn.Module):
         assert cond_tokens["extra_tokens"].shape[-1] == 4
         assert cond_tokens["text_context"].shape[-1] == 6
         assert timesteps.shape[:2] == x.shape[:2]
-        out = self.output(x)
+        out = self.output(x) + cond_tokens["extra_tokens"].mean(dim=1)[:, None, :3]
         if valid_mask is not None:
             out = out.masked_fill(~valid_mask.bool().unsqueeze(-1), 0.0)
         return out
@@ -72,6 +73,14 @@ class _FakeModel(nn.Module):
         self.condition_dim = 4
         self.text_encoder = None
         self.history_projector = nn.Linear(3, 4)
+        self.history_pos_encoder = None
+
+    def _conditions(self, batch, *, encoded_text):
+        history = (batch["history_features"] - self.representation.mean) / self.representation.std
+        tokens = self.history_projector(history)
+        if self.history_pos_encoder is not None:
+            tokens = tokens + self.history_pos_encoder(tokens)
+        return {"extra_tokens": tokens, "text_context": encoded_text[0], "text_mask": encoded_text[1]}
 
 
 def test_denoiser_step_export_wrapper_contract():
@@ -111,6 +120,25 @@ def test_export_wrapper_parity_rejects_semantic_drift():
     wrapper = DenoiserStepExportModel(model).eval()
     with torch.no_grad():
         wrapper.denoiser.output.weight.add_(1.0)
+    with pytest.raises(RuntimeError, match="changed the training denoiser semantics"):
+        validate_export_wrapper_parity(model, wrapper, _wrapper_parity_inputs(), {})
+
+
+@pytest.mark.parametrize("positional", [False, True])
+def test_export_history_position_matches_original_conditions(positional):
+    model = _FakeModel().eval()
+    if positional:
+        model.history_pos_encoder = SinusoidalPositionEncoding(4)
+    wrapper = DenoiserStepExportModel(model).eval()
+    metrics = validate_export_wrapper_parity(model, wrapper, _wrapper_parity_inputs(), {})
+    assert metrics["max_abs"] == 0.0
+
+
+def test_parity_rejects_missing_history_position_even_if_wrapper_is_self_consistent():
+    model = _FakeModel().eval()
+    model.history_pos_encoder = SinusoidalPositionEncoding(4)
+    wrapper = DenoiserStepExportModel(model).eval()
+    wrapper.history_pos_encoder = None
     with pytest.raises(RuntimeError, match="changed the training denoiser semantics"):
         validate_export_wrapper_parity(model, wrapper, _wrapper_parity_inputs(), {})
 
