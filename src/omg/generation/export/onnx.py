@@ -246,6 +246,7 @@ class DenoiserStepExportModel(nn.Module):
     def __init__(self, motion_model: nn.Module):
         super().__init__()
         self.history_projector = motion_model.history_projector
+        self.history_pos_encoder = motion_model.history_pos_encoder
         self.use_audio = bool(getattr(motion_model, "use_audio", False))
         self.audio_dim = int(getattr(motion_model, "audio_dim", 0))
         self.use_human_motion = bool(getattr(motion_model, "use_human_motion", False))
@@ -294,6 +295,8 @@ class DenoiserStepExportModel(nn.Module):
     ) -> dict[str, torch.Tensor]:
         history_norm = (history_features - self.feature_mean.to(history_features)) / self.feature_std.to(history_features)
         history_tokens = self.history_projector(history_norm)
+        if self.history_pos_encoder is not None:
+            history_tokens = history_tokens + self.history_pos_encoder(history_tokens)
         extra_tokens = [history_tokens]
         conditions = {
             "text_context": text_context,
@@ -369,15 +372,19 @@ def validate_export_wrapper_parity(
     rtol: float = 1.0e-4,
 ) -> dict[str, float]:
     x, timesteps, _, history_features, text_context, text_mask = args
-    conditions = wrapper._prepare_conditions(
-        history_features,
-        text_context,
-        text_mask,
-        kwargs.get("audio_features"),
-        kwargs.get("audio_mask"),
-        kwargs.get("human_motion"),
-        kwargs.get("human_motion_mask"),
-    )
+    # Independent oracle: use the original model's condition construction.
+    # Text encoding is external to the exported graph; reuse its supplied outputs.
+    if motion_model.training:
+        raise ValueError("Export parity requires the original model in eval mode")
+    batch = {"history_features": history_features, "mask": {"valid": torch.ones_like(args[2], dtype=torch.bool)}}
+    for feature, mask, export_mask in (
+        ("audio_features", "has_audio", "audio_mask"),
+        ("human_motion", "has_human_motion", "human_motion_mask"),
+    ):
+        if feature in kwargs:
+            batch[feature] = kwargs[feature]
+            batch["mask"][mask] = kwargs[export_mask]
+    conditions = motion_model._conditions(batch, encoded_text=(text_context, text_mask.bool()))
     with torch.no_grad():
         expected = motion_model.denoiser(x, timesteps, conditions, valid_mask=None)
         actual = wrapper(*args, **kwargs)

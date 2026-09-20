@@ -324,7 +324,12 @@ class MotionGenerator(pl.LightningModule):
         force_null_text: bool = False,
         force_null_audio: bool = False,
         force_null_human_motion: bool = False,
+        *,
+        encoded_text: tuple[torch.Tensor, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Build model conditions; export validation may supply external text outputs."""
+        if encoded_text is not None and (self.training or force_null_text):
+            raise ValueError("Pre-encoded text requires eval mode and an explicit non-null text branch")
         device = next(self.denoiser.parameters()).device
         history = self._history_features(batch).to(device=device, dtype=self.representation.mean.dtype)
         history_norm = self.representation.normalize_features(history)
@@ -336,7 +341,7 @@ class MotionGenerator(pl.LightningModule):
                 keep_history = (torch.rand(history.shape[0], 1, 1, device=device) >= self.history_mask_prob).to(history_tokens.dtype)
                 history_tokens = history_tokens * keep_history
         extra_tokens = [history_tokens]
-        text_context, text_mask = self._text_context(
+        text_context, text_mask = encoded_text if encoded_text is not None else self._text_context(
             batch,
             force_null_text=force_null_text,
             is_training=self.training,
