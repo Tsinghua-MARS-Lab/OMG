@@ -73,7 +73,7 @@ checkpoints and the benchmark evaluator are available from the official
 | OMG 500M | 170,000 | [`checkpoints/updated/500m/sstep=170000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/updated/500m/sstep%3D170000.ckpt) |
 
 The pretrained benchmark evaluator is available at
-[`evaluator/step_004000.pt`](https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt).
+[`evaluator/step_007000.pt`](https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_007000.pt).
 Release checksums are listed in
 [`SHA256SUMS`](https://huggingface.co/THU-MARS/OMG/blob/main/SHA256SUMS).
 
@@ -284,32 +284,28 @@ Benchmarks that report evaluator-based distribution and retrieval metrics use a
 pretrained evaluator checkpoint:
 
 ```text
-https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
+https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_007000.pt
 ```
 
 Recommended local path:
 
 ```text
-models/evaluator/pretrained.ckpt
+models/evaluator/step_007000.pt
 ```
 
-The validated release manifests are versioned under
-`assets/benchmarks/mixed_modalities_all_v2`. Regenerate them from the pinned
-dataset only when intentionally defining a new benchmark release:
+Download it with `hf download THU-MARS/OMG evaluator/step_007000.pt --local-dir models`.
 
-```bash
-PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
-  --data omg_data_lerobot_omnimodal \
-  --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
-```
+The release manifests and evaluation settings are under
+`assets/benchmarks/mixed_modalities_all_v2`. Text evaluation uses 60 frames,
+10-frame GT history, batch 32, CFG 3.0, and the same fixed manifest for FID/KID references.
 
 Run text, audio, human-reference, or artifact benchmarks:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.generation.benchmark text \
   --exp 50m \
-  --ckpt_path outputs/50m_release_train/checkpoints/last.ckpt \
-  --evaluator_checkpoint models/evaluator/pretrained.ckpt \
+  --ckpt_path models/checkpoints/updated/50m/sstep=142000.ckpt \
+  --evaluator_checkpoint models/evaluator/step_007000.pt \
   --samples_path assets/benchmarks/mixed_modalities_all_v2/text_test_1024.jsonl \
   --output_dir outputs/benchmarks/50m_text
 ```

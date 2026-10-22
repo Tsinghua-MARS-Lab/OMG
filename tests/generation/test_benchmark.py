@@ -21,6 +21,9 @@ from omg.benchmarks.runners.common import (
 from omg.benchmarks.metrics import multimodality
 from omg.benchmarks.protocol import benchmark_condition_cohorts, benchmark_source_datasets
 from omg.benchmarks.runners.text import (
+    _parse_args,
+    _real_motion_metrics,
+    _reference_records,
     _retrieval_distances_and_ranks,
     _sample_metric_rows,
     _sample_rankings,
@@ -138,7 +141,7 @@ def test_benchmark_cohorts_preserve_release_protocol():
     text = benchmark_condition_cohorts("text", "test")
     audio = benchmark_condition_cohorts("audio", "test")
     humanref = benchmark_condition_cohorts("humanref", "test")
-    assert len(text) == 12
+    assert len(text) == 8
     assert len(audio) == 5
     assert len(humanref) == 11
     assert text["amass"] == ("amass_test",)
@@ -301,3 +304,55 @@ def test_multimodality_metric_from_embeddings():
     assert summary["mean"] == pytest.approx(3.5)
     assert summary["min"] == pytest.approx(2.0)
     assert summary["max"] == pytest.approx(5.0)
+
+
+@pytest.mark.parametrize("seed", [0, 17])
+def test_gt_summary_and_per_sample_retrieval_share_candidates(seed):
+    rng = np.random.default_rng(4)
+    text = rng.normal(size=(64, 12))
+    motion = text + rng.normal(scale=1.5, size=text.shape)
+    datasets = ["a"] * 32 + ["b"] * 32
+    expected = _text_retrieval_summary(motion, text, dataset_names=datasets, seed=seed)
+    original_order = _text_retrieval_summary(motion, text, stratified=False)
+    assert expected["r_precision"] != original_order["r_precision"]
+    real = _real_motion_metrics(motion, motion, text, dataset_names=datasets, seed=seed)
+    assert real["r_precision_real"] == expected["r_precision"]
+    assert real["text_real"] == expected
+    rows = _sample_metric_rows(
+        captions=[str(i) for i in range(64)], dataset_names=datasets,
+        dataset_indices=list(range(64)), physical_values={},
+        generated_embeddings=motion, reference_embeddings=motion,
+        text_embeddings=text, seed=seed,
+    )
+    for k in range(1, 4):
+        assert np.mean([r[f"reference_r_at_{k}"] for r in rows]) == expected["r_precision"][k-1]
+        assert np.mean([r[f"generated_r_at_{k}"] for r in rows]) == expected["r_precision"][k-1]
+
+
+def test_pinned_reference_never_resamples(monkeypatch):
+    from argparse import Namespace
+    from omg.benchmarks.runners import text
+    rows = [object(), object()]
+    monkeypatch.setattr(text, "_load_sample_records", lambda path: rows)
+    monkeypatch.setattr(text, "_resolve_sample_records", lambda records, datasets: records)
+    def forbidden(*args):
+        raise AssertionError("Pinned references must not be sampled")
+    monkeypatch.setattr(text, "_select_sample_records", forbidden)
+    args = Namespace(reference_samples_path="fixed.jsonl", num_reference_motions=2, seed=0)
+    assert _reference_records(args, {}) is rows
+    args.num_reference_motions = 3
+    with pytest.raises(ValueError, match="Pinned reference manifest"):
+        _reference_records(args, {})
+
+
+def test_text_defaults_pin_generation_and_distribution_reference(tmp_path):
+    evaluator = tmp_path / "evaluator.pt"
+    evaluator.touch()
+    args = _parse_args(["--exp", "50m", "--ckpt_path", "model.ckpt", "--evaluator_checkpoint", str(evaluator)])
+    assert args.num_frames == 60 and args.batch_size == 32 and args.seed == 0
+    assert args.cfg_scale == 3.0 and args.enable_text_metrics and args.text_only
+    assert args.reference_samples_path == args.samples_path
+    rows = _load_sample_records(Path(args.samples_path))
+    assert len(rows) == 1024
+    assert {r.window_start for r in rows} == {0}
+    assert len({r.dataset for r in rows}) == 8

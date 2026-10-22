@@ -12,7 +12,7 @@ import torch
 from hydra import compose, initialize_config_dir
 from tqdm import tqdm
 
-from omg.benchmarks.protocol import benchmark_source_datasets
+from omg.benchmarks.protocol import benchmark_source_datasets, release_manifest_path
 from omg.benchmarks.runners.common import (
     conditioned_dataset_metrics,
     finite_valid,
@@ -84,7 +84,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output_dir", default=None)
     parser.add_argument("--split", choices=["val", "test"], default="test")
     parser.add_argument("--num_samples", type=int, default=512)
-    parser.add_argument("--batch-size", "--batch_size", dest="batch_size", type=int, default=64)
+    parser.add_argument("--batch-size", "--batch_size", dest="batch_size", type=int, default=32)
     parser.add_argument("--datasets", nargs="+", default=None)
     parser.add_argument("--num_frames", type=int, default=60)
     parser.add_argument("--seed", type=int, default=0)
@@ -92,7 +92,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cfg_scales", "--cfg_human_scales", dest="cfg_human_scales", nargs="+", default=None)
     parser.add_argument("--motion_key", choices=["qpos_36", "body_pos_local", "body_link_pos_local"], default="body_pos_local")
     parser.add_argument("--evaluator_checkpoint", default=None)
-    parser.add_argument("--samples_path", default=None)
+    parser.add_argument("--samples_path", default=str(release_manifest_path("humanref")))
     parser.add_argument("--contact_height_threshold", type=float, default=0.12)
     parser.add_argument("--contact_penetration_tolerance", type=float, default=0.02)
     parser.add_argument("--transition-metrics", "--transition_metrics", dest="transition_metrics", action=argparse.BooleanOptionalAction, default=True)

@@ -23,13 +23,13 @@ Evaluator-based distribution and retrieval metrics require the released OMG
 evaluator checkpoint:
 
 ```text
-https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
+https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_007000.pt
 ```
 
 Recommended local path:
 
 ```text
-models/evaluator/pretrained.ckpt
+models/evaluator/step_007000.pt
 ```
 
 Text retrieval metrics also use a [T5-3B text encoder](https://huggingface.co/google-t5/t5-3b). By default, the benchmark
@@ -50,15 +50,11 @@ The validated release manifests are committed at:
 assets/benchmarks/mixed_modalities_all_v2/
 ```
 
-Use these files for paper/release comparisons. To intentionally define a new
-benchmark release, regenerate candidates from the pinned public LeRobotDataset
-v3 source:
-
-```bash
-PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
-  --data omg_data_lerobot_omnimodal \
-  --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
-```
+Use these fixed files for comparisons. The summary records the evaluator hash
+and evaluation settings: 60 frames, 10-frame GT history, seed 0, batch 32, text
+CFG 3.0, and fixed batch32 retrieval. GT and generated retrieval use the same
+candidate groups. FID/KID use the text manifest as their real-motion reference;
+`--reference-samples-path` can select an explicit alternative.
 
 The generated `omg.benchmark.sample.v2` rows contain the repository revision,
 split, episode, exact window, and source identity. Runners resolve every field
@@ -66,9 +62,8 @@ against LeRobot metadata and reject stale or mismatched manifests. The same
 fixed rows can therefore be shared by checkpoint and artifact evaluations
 without relying on machine-local indices or private source paths.
 
-The preparation command preserves the release cohort protocol (12 text
-cohorts, 5 audio cohorts, and 11 human-reference cohorts) while resolving each
-selected row to its canonical LeRobot source dataset.
+The release contains 8 text cohorts, 5 audio cohorts, and 11 human-reference
+cohorts, resolved to canonical LeRobot source datasets.
 
 Use the committed manifest as input to benchmark runners, for example with
 `--samples_path assets/benchmarks/mixed_modalities_all_v2/text_test_1024.jsonl`.

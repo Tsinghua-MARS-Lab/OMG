@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 import json
 import math
+import os
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,11 @@ from omg.benchmarks.metrics import diversity, motion_fid, motion_kid
 from omg.core.paths import resolve_repo_path
 from omg.generation.metrics import physical_qpos_metrics
 from omg.data.lerobot_dataset import LeRobotG1MotionDataset
+
+
+DEFAULT_EVALUATOR_CHECKPOINT = str(
+    Path(os.environ.get("OMG_MODELS_ROOT", "models")) / "evaluator" / "step_007000.pt"
+)
 
 
 @dataclass(frozen=True)
