@@ -63,15 +63,14 @@ checkpoints and the benchmark evaluator are available from the official
 [THU-MARS/OMG Hugging Face repository](https://huggingface.co/THU-MARS/OMG):
 
 - [OMG-Data](https://huggingface.co/datasets/THU-MARS/OMG-Data)
-- [Materialized OMG-Data]() (coming soon)
 - [OMG checkpoints and evaluator](https://huggingface.co/THU-MARS/OMG/tree/main)
 
 | Model | Training step | Checkpoint |
 | --- | ---: | --- |
-| OMG 50M | 90,000 | [`checkpoints/50m/sstep=090000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/50m/sstep%3D090000.ckpt) |
-| OMG 100M | 100,000 | [`checkpoints/100m/sstep=100000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/100m/sstep%3D100000.ckpt) |
-| OMG 300M | 55,000 | [`checkpoints/300m/sstep=055000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/300m/sstep%3D055000.ckpt) |
-| OMG 500M | 50,000 | [`checkpoints/500m/sstep=050000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/500m/sstep%3D050000.ckpt) |
+| OMG 50M | 142,000 | [`checkpoints/updated/50m/sstep=142000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/updated/50m/sstep%3D142000.ckpt) |
+| OMG 100M | 170,000 | [`checkpoints/updated/100m/sstep=170000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/updated/100m/sstep%3D170000.ckpt) |
+| OMG 300M | 176,000 | [`checkpoints/updated/300m/sstep=176000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/updated/300m/sstep%3D176000.ckpt) |
+| OMG 500M | 170,000 | [`checkpoints/updated/500m/sstep=170000.ckpt`](https://huggingface.co/THU-MARS/OMG/blob/main/checkpoints/updated/500m/sstep%3D170000.ckpt) |
 
 The pretrained benchmark evaluator is available at
 [`evaluator/step_004000.pt`](https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt).
