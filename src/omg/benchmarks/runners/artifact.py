@@ -257,7 +257,10 @@ def _run_text_artifact(args: argparse.Namespace, output_dir: Path, model: Any, d
             evaluator_checkpoint, captions, model_name=args.t5_3b_model, cache_dir=args.text_cache_dir,
             batch_size=args.text_batch_size, device=device
         )
-    real_motion_metrics = _real_motion_metrics(reference_embeddings, reference_embeddings, text_embeddings)
+    real_motion_metrics = _real_motion_metrics(
+        reference_embeddings, reference_embeddings, text_embeddings,
+        dataset_names=dataset_names, seed=int(args.seed),
+    )
     embedding_metrics = _embedding_distribution_metrics(reference_embeddings, generated_embeddings)
     embedding_metrics.update({
         "embedding_frames": embedding_frames,
@@ -304,6 +307,7 @@ def _run_text_artifact(args: argparse.Namespace, output_dir: Path, model: Any, d
         captions=captions, dataset_names=dataset_names, dataset_indices=dataset_indices, physical_values=physical_values,
         generated_embeddings=generated_embeddings, reference_embeddings=reference_embeddings, text_embeddings=text_embeddings,
         transition_values=transition_values,
+        seed=int(args.seed),
     )
     sample_rankings = _sample_rankings(sample_rows)
     tracker_executed = run_tracker_executed_benchmark(

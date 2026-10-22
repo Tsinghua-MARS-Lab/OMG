@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from omg.core.paths import resolve_repo_path
+
+
+def release_manifest_path(condition: str) -> Path:
+    counts = {"text": 1024, "audio": 512, "humanref": 512}
+    if condition not in counts:
+        raise ValueError(f"Unsupported benchmark condition {condition!r}")
+    return resolve_repo_path(
+        f"assets/benchmarks/mixed_modalities_all_v2/{condition}_test_{counts[condition]}.jsonl"
+    )
+
 
 BENCHMARK_COHORT_FAMILIES = {
     "text": {
@@ -8,12 +21,8 @@ BENCHMARK_COHORT_FAMILIES = {
             "100style",
             "amass",
             "bones_seed",
-            "fitness",
             "humanml",
-            "idea400",
             "lafan1",
-            "motiongv",
-            "motionllama",
             "omomo",
             "permo",
             "snapmogen",

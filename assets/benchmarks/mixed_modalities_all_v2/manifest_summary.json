@@ -41,34 +41,36 @@
       "all_condition_windows_valid": true,
       "all_identities_resolved": true,
       "cohort_counts": {
-        "100style": 86,
-        "amass": 86,
-        "bones_seed": 86,
-        "fitness": 86,
-        "humanml": 85,
-        "idea400": 85,
-        "lafan1": 85,
-        "motiongv": 85,
-        "motionllama": 85,
-        "omomo": 85,
-        "permo": 85,
-        "snapmogen": 85
+        "100style": 141,
+        "amass": 140,
+        "bones_seed": 140,
+        "humanml": 43,
+        "lafan1": 140,
+        "omomo": 140,
+        "permo": 140,
+        "snapmogen": 140
       },
       "num_samples": 1024,
       "path": "text_test_1024.jsonl",
-      "sha256": "dacee8cf3712b7d22316ec0506a0348bed9a123346e047d1ce1f437bc0027749",
-      "short_motion_windows": 56,
-      "unique_episodes": 934
+      "sha256": "168686b21807538de6447bf955a7be279da9afa6ba6fdb16350046804c3cb194",
+      "short_motion_windows": 0,
+      "unique_episodes": 1024
     }
   },
   "data_manifest_sha256": "be443885018180dda0f88ed874efc15cb3776a91148148baf49001d56a5ec855",
-  "migration": {
-    "caption_updates_from_canonical_tasks": 4,
-    "identity_plus_redundant_validated_v1_index": 26,
-    "identity_unique": 2022,
-    "source_sample_set": "mixed_modalities_all_v1",
-    "source_model_repo": "THU-MARS/OMG",
-    "source_model_revision": "70d63a9a5d6ce72928f7d9579241c97981de0307"
+  "evaluation": {
+    "evaluator": "evaluator/step_007000.pt",
+    "evaluator_sha256": "5aeafa28a7391f2ad38d8db67c1be350adda47a7d02fa9fe9efb5fb1fe2f0ce2",
+    "motion_key": "body_pos_local",
+    "history_frames": 10,
+    "history": "ground_truth",
+    "batch_size": 32,
+    "text_cfg_scale": 3.0,
+    "text_encoder": "google-t5/t5-3b",
+    "reference_split": "test",
+    "reference_samples_path": "text_test_1024.jsonl",
+    "retrieval_candidates": 32,
+    "retrieval_seed": 0
   },
   "num_frames": 60,
   "repo_id": "THU-MARS/OMG-Data",

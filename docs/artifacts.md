@@ -7,7 +7,7 @@ The public artifacts are released on Hugging Face:
 ```text
 OMG-Data:        https://huggingface.co/datasets/THU-MARS/OMG-Data
 OMG checkpoints: https://huggingface.co/THU-MARS/OMG/tree/main/checkpoints
-OMG evaluator:   https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_004000.pt
+OMG evaluator:   https://huggingface.co/THU-MARS/OMG/blob/main/evaluator/step_007000.pt
 ```
 
 ## Default Local Layout
@@ -48,7 +48,7 @@ For generation and tracking demos, prepare:
 
 For evaluator-based benchmark metrics, prepare:
 
-- `models/evaluator/pretrained.ckpt`, downloaded from the OMG evaluator release.
+- `models/evaluator/step_007000.pt`, downloaded from the OMG evaluator release.
 
 For training, prepare either the official LeRobot v3 dataset under `OMG-Data/`
 or frame-level episode kinematics caches under `materialized/`.

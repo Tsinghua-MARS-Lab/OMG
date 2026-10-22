@@ -115,20 +115,20 @@ The validated release set lives at
 `assets/benchmarks/mixed_modalities_all_v2`; its summary records the data
 revision, manifest hashes, cohort counts, and frame-level validation outcome.
 
-Prepare all three benchmark cohorts with:
+To prepare a custom sample set:
 
 ```bash
 PYTHONPATH=src python -m omg.cli.evaluation.prepare_samples \
   --data omg_data_lerobot_omnimodal \
-  --output_dir outputs/benchmark_samples/mixed_modalities_all_v2
+  --output_dir outputs/benchmark_samples/custom
 ```
 
 Condition eligibility follows the release protocol: text needs a non-empty
 task and uses the motion-valid mask for short clips, while every requested
 audio or human-reference frame must have its corresponding condition mask set.
-Sampling remains balanced over the original release benchmark
-cohorts; the four language-specific BEAT2 source groups form one human-reference
-cohort so the protocol remains comparable to `mixed_modalities_all_v1`.
+Custom sampling balances the configured cohorts; the four language-specific
+BEAT2 source groups form one human-reference cohort. Use the committed manifests
+for release comparisons.
 
 ## External inference conditions
 
